@@ -1,18 +1,25 @@
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
-import { getCurrentUser, logoutUser } from '../services/api';
+import {
+  getCitasByPropietario,
+  getCurrentPropietario,
+  getMascotasByPropietario,
+  logoutPropietario
+} from '../services/api';
 
 export default function HomeScreen() {
   const [user, setUser] = useState<any>(null);
+  const [mascotas, setMascotas] = useState<any[]>([]);
+  const [citas, setCitas] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -20,9 +27,36 @@ export default function HomeScreen() {
   }, []);
 
   const loadUserData = async () => {
-    const userData = await getCurrentUser();
-    setUser(userData);
-    setLoading(false);
+    try {
+      // Obtener usuario actual desde AsyncStorage
+      const userData = await getCurrentPropietario();
+      setUser(userData);
+      
+      // Obtener mascotas del usuario usando su ID
+      if (userData?.id) {
+        try {
+          const mascotasData = await getMascotasByPropietario(userData.id);
+          setMascotas(mascotasData || []);
+        } catch (mascotaError) {
+          console.error('Error al cargar mascotas:', mascotaError);
+          setMascotas([]);
+        }
+        
+        // Obtener citas del usuario usando su ID
+        try {
+          const citasData = await getCitasByPropietario(userData.id);
+          setCitas(citasData || []);
+        } catch (citaError) {
+          console.error('Error al cargar citas:', citaError);
+          setCitas([]);
+        }
+      }
+    } catch (error) {
+      console.error('Error al cargar datos del usuario:', error);
+      Alert.alert('Error', 'No se pudieron cargar los datos del usuario');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleLogout = () => {
@@ -34,12 +68,29 @@ export default function HomeScreen() {
         {
           text: 'Sí, salir',
           onPress: async () => {
-            await logoutUser();
+            await logoutPropietario();
             router.replace('/');
           },
         },
       ]
     );
+  };
+
+  // Navegación a diferentes secciones
+  const navigateToProfile = () => {
+    router.push('/profile');
+  };
+
+  const navigateToMascotas = () => {
+    router.push('/mascotas');
+  };
+
+  const navigateToAgendarCita = () => {
+    router.push('/agendar-cita');
+  };
+
+  const navigateToHistorialMedico = () => {
+    router.push('/historial-medico');
   };
 
   if (loading) {
@@ -61,11 +112,11 @@ export default function HomeScreen() {
 
       <View style={styles.statsRow}>
         <View style={styles.statCard}>
-          <Text style={styles.statNumber}>0</Text>
+          <Text style={styles.statNumber}>{mascotas.length}</Text>
           <Text style={styles.statLabel}>Mascotas</Text>
         </View>
         <View style={styles.statCard}>
-          <Text style={styles.statNumber}>0</Text>
+          <Text style={styles.statNumber}>{citas.length}</Text>
           <Text style={styles.statLabel}>Citas</Text>
         </View>
         <View style={styles.statCard}>
@@ -77,19 +128,31 @@ export default function HomeScreen() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Acciones rápidas</Text>
         
-        <TouchableOpacity style={styles.actionButton}>
+        <TouchableOpacity 
+          style={styles.actionButton} 
+          onPress={navigateToProfile}
+        >
           <Text style={styles.actionButtonText}>👤 Ver perfil</Text>
         </TouchableOpacity>
         
-        <TouchableOpacity style={styles.actionButton}>
-          <Text style={styles.actionButtonText}>🐕 Mis mascotas</Text>
+        <TouchableOpacity 
+          style={styles.actionButton} 
+          onPress={navigateToMascotas}
+        >
+          <Text style={styles.actionButtonText}>🐕 Mis mascotas ({mascotas.length})</Text>
         </TouchableOpacity>
         
-        <TouchableOpacity style={styles.actionButton}>
+        <TouchableOpacity 
+          style={styles.actionButton} 
+          onPress={navigateToAgendarCita}
+        >
           <Text style={styles.actionButtonText}>📅 Agendar cita</Text>
         </TouchableOpacity>
         
-        <TouchableOpacity style={styles.actionButton}>
+        <TouchableOpacity 
+          style={styles.actionButton} 
+          onPress={navigateToHistorialMedico}
+        >
           <Text style={styles.actionButtonText}>🏥 Historial médico</Text>
         </TouchableOpacity>
       </View>
@@ -218,7 +281,7 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   footerText: {
-    
+    color: '#9CA3AF',
     fontSize: 14,
   },
 });

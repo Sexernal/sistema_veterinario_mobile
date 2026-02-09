@@ -1,18 +1,18 @@
 import { router } from 'expo-router';
 import React, { useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    KeyboardAvoidingView,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
-import { loginUser } from '../services/api';
+import { loginPropietario } from '../services/api';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState<string>('');
@@ -20,37 +20,54 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState<boolean>(false);
 
   const handleLogin = async () => {
-    // Validaciones básicas
     if (!email.trim() || !password.trim()) {
       Alert.alert('Error', 'Por favor ingresa tu correo y contraseña');
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      Alert.alert('Error', 'Ingresa un correo electrónico válido');
       return;
     }
 
     setLoading(true);
 
     try {
-      const result = await loginUser({ email, password });
+      const result = await loginPropietario({ email, password });
       
-      if (result.success) {
-        Alert.alert('¡Éxito!', 'Inicio de sesión correcto', [
+      if (result.success && result.propietario) {
+        console.log('Login exitoso, propietario:', result.propietario);
+        Alert.alert('¡Éxito!', `Bienvenido ${result.propietario.nombre || 'Propietario'}`, [
           { text: 'Continuar', onPress: () => router.replace('/home') }
         ]);
       } else {
         Alert.alert('Error', result.message || 'Credenciales incorrectas');
       }
     } catch (error: any) {
-      console.error('Error completo:', error);
-      Alert.alert(
-        'Error de conexión',
-        'No se pudo conectar al servidor. Verifica:\n\n• Tu conexión a internet\n• Que el servidor esté encendido\n• La dirección IP del servidor'
-      );
+      console.error('Error completo en login:', error);
+      
+      if (error.message?.includes('network') || error.message?.includes('conexión')) {
+        Alert.alert(
+          'Error de conexión',
+          'No se pudo conectar al servidor. Verifica:\n\n• Tu conexión a internet\n• Que el servidor esté encendido'
+        );
+      } else if (error.status === 401) {
+        Alert.alert('Acceso denegado', 'Email o contraseña incorrectos');
+      } else {
+        Alert.alert('Error', error.message || 'Ocurrió un error inesperado');
+      }
     } finally {
       setLoading(false);
     }
   };
 
   const handleRegister = () => {
-    Alert.alert('Información', 'Función de registro en desarrollo');
+    Alert.alert('Información', 'Para registrarte como propietario, contacta a la veterinaria directamente.');
+  };
+
+  const handleForgotPassword = () => {
+    Alert.alert('Recuperar contraseña', 'Contacta a la veterinaria para restablecer tu contraseña.');
   };
 
   return (
@@ -61,13 +78,13 @@ export default function LoginScreen() {
       <ScrollView contentContainerStyle={styles.scrollContainer}>
         <View style={styles.header}>
           <Text style={styles.title}>🐾 Veterinaria Móvil</Text>
-          <Text style={styles.subtitle}>Cuidado profesional para tus mascotas</Text>
+          <Text style={styles.subtitle}>Acceso para propietarios de mascotas</Text>
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Iniciar Sesión</Text>
+          <Text style={styles.cardTitle}>Acceso Propietarios</Text>
           
-          <Text style={styles.label}>Correo electrónico</Text>
+          <Text style={styles.label}>Correo electrónico registrado</Text>
           <TextInput
             style={styles.input}
             placeholder="ejemplo@gmail.com"
@@ -96,19 +113,28 @@ export default function LoginScreen() {
             {loading ? (
               <ActivityIndicator color="#FFFFFF" />
             ) : (
-              <Text style={styles.buttonText}>Ingresar al Sistema</Text>
+              <Text style={styles.buttonText}>Acceder como Propietario</Text>
             )}
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.linkButton}>
+          <TouchableOpacity style={styles.linkButton} onPress={handleForgotPassword}>
             <Text style={styles.linkText}>¿Olvidaste tu contraseña?</Text>
           </TouchableOpacity>
+        </View>
+
+        <View style={styles.infoBox}>
+          <Text style={styles.infoTitle}>📋 Información importante</Text>
+          <Text style={styles.infoText}>
+            • Usa el mismo email y contraseña que te proporcionó la veterinaria
+            • Si no tienes cuenta, contacta a la recepción
+            • Para emergencias, llama al: +506 8888-8888
+          </Text>
         </View>
 
         <View style={styles.footer}>
           <Text style={styles.footerText}>¿Eres nuevo en el sistema?</Text>
           <TouchableOpacity onPress={handleRegister}>
-            <Text style={styles.registerText}>Crear una cuenta</Text>
+            <Text style={styles.registerText}>Solicitar registro</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -128,7 +154,7 @@ const styles = StyleSheet.create({
   },
   header: {
     alignItems: 'center',
-    marginBottom: 40,
+    marginBottom: 30,
   },
   title: {
     fontSize: 32,
@@ -195,11 +221,31 @@ const styles = StyleSheet.create({
   },
   linkButton: {
     alignItems: 'center',
+    marginTop: 10,
   },
   linkText: {
     color: '#059669',
     fontSize: 14,
     fontWeight: '500',
+  },
+  infoBox: {
+    backgroundColor: '#DBEAFE',
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 24,
+    borderLeftWidth: 4,
+    borderLeftColor: '#3B82F6',
+  },
+  infoTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1E40AF',
+    marginBottom: 8,
+  },
+  infoText: {
+    fontSize: 14,
+    color: '#374151',
+    lineHeight: 20,
   },
   footer: {
     alignItems: 'center',
