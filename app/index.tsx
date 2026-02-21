@@ -77,12 +77,12 @@ export default function LoginScreen() {
     >
       <ScrollView contentContainerStyle={styles.scrollContainer}>
         <View style={styles.header}>
-          <Text style={styles.title}>🐾 Veterinaria Móvil</Text>
+          <Text style={styles.title}>🐾 VetCare Clinic</Text>
           <Text style={styles.subtitle}>Acceso para propietarios de mascotas</Text>
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Acceso Propietarios</Text>
+          <Text style={styles.cardTitle}>Inicio de sesión</Text>
           
           <Text style={styles.label}>Correo electrónico registrado</Text>
           <TextInput
@@ -125,9 +125,13 @@ export default function LoginScreen() {
         <View style={styles.infoBox}>
           <Text style={styles.infoTitle}>📋 Información importante</Text>
           <Text style={styles.infoText}>
-            • Usa el mismo email y contraseña que te proporcionó la veterinaria
-            • Si no tienes cuenta, contacta a la recepción
-            • Para emergencias, llama al: +506 8888-8888
+            • Usa el mismo email y contraseña que te proporcionó la veterinaria al crear tu cuenta
+          </Text>
+          <Text style={styles.infoText}>
+            • Si no tienes cuenta, debes ir personalmente o contactar con recepción al número +506 7777-9999
+          </Text>
+          <Text style={styles.infoText}>
+            • Para emergencias (en caso de que sea día feriado o domingos), llama al: +506 8888-8888
           </Text>
         </View>
 

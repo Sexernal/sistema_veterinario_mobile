@@ -1,3 +1,4 @@
+// app/home.tsx
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
@@ -27,12 +28,13 @@ export default function HomeScreen() {
   }, []);
 
   const loadUserData = async () => {
+    setLoading(true);
     try {
-      // Obtener usuario actual desde AsyncStorage
+      // Obtener usuario actual desde AsyncStorage (servicio)
       const userData = await getCurrentPropietario();
       setUser(userData);
-      
-      // Obtener mascotas del usuario usando su ID
+
+      // Si tenemos usuario, pedir mascotas y citas filtradas por propietario
       if (userData?.id) {
         try {
           const mascotasData = await getMascotasByPropietario(userData.id);
@@ -41,8 +43,7 @@ export default function HomeScreen() {
           console.error('Error al cargar mascotas:', mascotaError);
           setMascotas([]);
         }
-        
-        // Obtener citas del usuario usando su ID
+
         try {
           const citasData = await getCitasByPropietario(userData.id);
           setCitas(citasData || []);
@@ -50,10 +51,16 @@ export default function HomeScreen() {
           console.error('Error al cargar citas:', citaError);
           setCitas([]);
         }
+      } else {
+        // si no hay usuario guardado, limpiar
+        setMascotas([]);
+        setCitas([]);
       }
     } catch (error) {
       console.error('Error al cargar datos del usuario:', error);
       Alert.alert('Error', 'No se pudieron cargar los datos del usuario');
+      setMascotas([]);
+      setCitas([]);
     } finally {
       setLoading(false);
     }
@@ -93,6 +100,9 @@ export default function HomeScreen() {
     router.push('/historial-medico');
   };
 
+  // Conteo de recordatorios: citas en estado "pendiente"
+  const pendingCount = citas.filter(c => ((c.estado || '')?.toString().toLowerCase() === 'pendiente')).length;
+
   if (loading) {
     return (
       <View style={styles.centered}>
@@ -115,42 +125,44 @@ export default function HomeScreen() {
           <Text style={styles.statNumber}>{mascotas.length}</Text>
           <Text style={styles.statLabel}>Mascotas</Text>
         </View>
+
         <View style={styles.statCard}>
           <Text style={styles.statNumber}>{citas.length}</Text>
           <Text style={styles.statLabel}>Citas</Text>
         </View>
+
         <View style={styles.statCard}>
-          <Text style={styles.statNumber}>0</Text>
-          <Text style={styles.statLabel}>Recordatorios</Text>
+          <Text style={styles.statNumber}>{pendingCount}</Text>
+          <Text style={styles.statLabel}>Pendientes</Text>
         </View>
       </View>
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Acciones rápidas</Text>
-        
-        <TouchableOpacity 
-          style={styles.actionButton} 
+
+        <TouchableOpacity
+          style={styles.actionButton}
           onPress={navigateToProfile}
         >
           <Text style={styles.actionButtonText}>👤 Ver perfil</Text>
         </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.actionButton} 
+
+        <TouchableOpacity
+          style={styles.actionButton}
           onPress={navigateToMascotas}
         >
           <Text style={styles.actionButtonText}>🐕 Mis mascotas ({mascotas.length})</Text>
         </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.actionButton} 
+
+        <TouchableOpacity
+          style={styles.actionButton}
           onPress={navigateToAgendarCita}
         >
           <Text style={styles.actionButtonText}>📅 Agendar cita</Text>
         </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.actionButton} 
+
+        <TouchableOpacity
+          style={styles.actionButton}
           onPress={navigateToHistorialMedico}
         >
           <Text style={styles.actionButtonText}>🏥 Historial médico</Text>
@@ -162,7 +174,7 @@ export default function HomeScreen() {
       </TouchableOpacity>
 
       <View style={styles.footer}>
-        <Text style={styles.footerText}>Sistema Veterinario v1.0</Text>
+        <Text style={styles.footerText}>Sistema Veterinario v2.0</Text>
       </View>
     </ScrollView>
   );
