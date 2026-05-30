@@ -1,4 +1,3 @@
-// app/home.tsx
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
@@ -10,290 +9,307 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { C, S, STATUS_MAP, TIPO_MAP } from '../constants/theme';
 import {
   getCitasByPropietario,
   getCurrentPropietario,
   getMascotasByPropietario,
-  logoutPropietario
+  logoutPropietario,
 } from '../services/api';
 
+// ─── Componentes locales ───────────────────────────────────────────────────────
+
+function StatusBadge({ estado }: { estado: string }) {
+  const cfg = STATUS_MAP[(estado || '').toLowerCase()] ?? STATUS_MAP.pendiente;
+  return (
+    <View style={{
+      flexDirection: 'row', alignItems: 'center', gap: 4,
+      paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999,
+      backgroundColor: cfg.bg, borderWidth: 1, borderColor: cfg.border,
+    }}>
+      <Text style={{ fontSize: 11 }}>{cfg.icon}</Text>
+      <Text style={{ fontSize: 11, fontWeight: '700', color: cfg.color }}>{cfg.label}</Text>
+    </View>
+  );
+}
+
+function StatCard({ icon, label, value, color }: { icon: string; label: string; value: number; color: string }) {
+  return (
+    <View style={[styles.statCard, { borderTopWidth: 2, borderTopColor: color }]}>
+      <Text style={{ fontSize: 22 }}>{icon}</Text>
+      <Text style={{ fontSize: 26, fontWeight: '800', color, marginTop: 6 }}>{value}</Text>
+      <Text style={[S.small, { marginTop: 2, textAlign: 'center' }]}>{label}</Text>
+    </View>
+  );
+}
+
+function QuickAction({ icon, label, subtitle, onPress }: {
+  icon: string; label: string; subtitle: string; onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity style={styles.actionCard} onPress={onPress} activeOpacity={0.75}>
+      <View style={styles.actionIcon}>
+        <Text style={{ fontSize: 26 }}>{icon}</Text>
+      </View>
+      <Text style={[S.h3, { marginTop: 10, fontSize: 15 }]}>{label}</Text>
+      <Text style={[S.small, { marginTop: 3, fontSize: 12, textAlign: 'center' }]}>{subtitle}</Text>
+    </TouchableOpacity>
+  );
+}
+
+// ─── Pantalla principal ────────────────────────────────────────────────────────
+
 export default function HomeScreen() {
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser]       = useState<any>(null);
   const [mascotas, setMascotas] = useState<any[]>([]);
-  const [citas, setCitas] = useState<any[]>([]);
+  const [citas, setCitas]     = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    loadUserData();
-  }, []);
+  useEffect(() => { loadData(); }, []);
 
-  const loadUserData = async () => {
+  const loadData = async () => {
     setLoading(true);
     try {
-      // Obtener usuario actual desde AsyncStorage (servicio)
       const userData = await getCurrentPropietario();
       setUser(userData);
-
-      // Si tenemos usuario, pedir mascotas y citas filtradas por propietario
       if (userData?.id) {
-        try {
-          const mascotasData = await getMascotasByPropietario(userData.id);
-          setMascotas(mascotasData || []);
-        } catch (mascotaError) {
-          console.error('Error al cargar mascotas:', mascotaError);
-          setMascotas([]);
-        }
-
-        try {
-          const citasData = await getCitasByPropietario(userData.id);
-          setCitas(citasData || []);
-        } catch (citaError) {
-          console.error('Error al cargar citas:', citaError);
-          setCitas([]);
-        }
-      } else {
-        // si no hay usuario guardado, limpiar
-        setMascotas([]);
-        setCitas([]);
+        const [m, c] = await Promise.all([
+          getMascotasByPropietario(userData.id).catch(() => []),
+          getCitasByPropietario(userData.id).catch(() => []),
+        ]);
+        setMascotas(m || []);
+        setCitas(c || []);
       }
-    } catch (error) {
-      console.error('Error al cargar datos del usuario:', error);
-      Alert.alert('Error', 'No se pudieron cargar los datos del usuario');
-      setMascotas([]);
-      setCitas([]);
+    } catch {
+      Alert.alert('Error', 'No se pudieron cargar tus datos.');
     } finally {
       setLoading(false);
     }
   };
 
   const handleLogout = () => {
-    Alert.alert(
-      'Cerrar sesión',
-      '¿Estás seguro de que quieres salir?',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Sí, salir',
-          onPress: async () => {
-            await logoutPropietario();
-            router.replace('/');
-          },
-        },
-      ]
-    );
+    Alert.alert('Cerrar sesión', '¿Estás seguro de que quieres salir?', [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Sí, salir', style: 'destructive', onPress: async () => {
+        await logoutPropietario();
+        router.replace('/');
+      }},
+    ]);
   };
-
-  // Navegación a diferentes secciones
-  const navigateToProfile = () => {
-    router.push('/profile');
-  };
-
-  const navigateToMascotas = () => {
-    router.push('/mascotas');
-  };
-
-  const navigateToAgendarCita = () => {
-    router.push('/agendar-cita');
-  };
-
-  const navigateToHistorialMedico = () => {
-    router.push('/historial-medico');
-  };
-
-  // Conteo de recordatorios: citas en estado "pendiente"
-  const pendingCount = citas.filter(c => ((c.estado || '')?.toString().toLowerCase() === 'pendiente')).length;
 
   if (loading) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#059669" />
-        <Text style={styles.loadingText}>Cargando información...</Text>
+      <View style={S.centered}>
+        <ActivityIndicator size="large" color={C.accent} />
+        <Text style={[S.small, { marginTop: 12 }]}>Cargando tu información...</Text>
       </View>
     );
   }
 
+  const pendingCount   = citas.filter(c => (c.estado || '').toLowerCase() === 'pendiente').length;
+  const confirmedCount = citas.filter(c => (c.estado || '').toLowerCase() === 'confirmada').length;
+  const recentCitas    = [...citas]
+    .sort((a, b) => new Date(b.fecha_inicio || 0).getTime() - new Date(a.fecha_inicio || 0).getTime())
+    .slice(0, 3);
+
+  const firstName = (user?.nombre || 'Usuario').split(' ')[0];
+
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView style={S.screen} showsVerticalScrollIndicator={false}>
+
+      {/* ── Header ── */}
       <View style={styles.header}>
-        <Text style={styles.greeting}>¡Hola de nuevo!</Text>
-        <Text style={styles.userName}>{user?.nombre || 'Usuario'}</Text>
-        <Text style={styles.userEmail}>{user?.email || ''}</Text>
-      </View>
-
-      <View style={styles.statsRow}>
-        <View style={styles.statCard}>
-          <Text style={styles.statNumber}>{mascotas.length}</Text>
-          <Text style={styles.statLabel}>Mascotas</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={[S.small, { marginBottom: 4 }]}>Bienvenido de nuevo 👋</Text>
+          <Text style={[S.h1, { color: C.accent }]}>{firstName}</Text>
+          <Text style={[S.small, { marginTop: 2 }]}>{user?.email || ''}</Text>
         </View>
-
-        <View style={styles.statCard}>
-          <Text style={styles.statNumber}>{citas.length}</Text>
-          <Text style={styles.statLabel}>Citas</Text>
-        </View>
-
-        <View style={styles.statCard}>
-          <Text style={styles.statNumber}>{pendingCount}</Text>
-          <Text style={styles.statLabel}>Pendientes</Text>
-        </View>
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Acciones rápidas</Text>
-
-        <TouchableOpacity
-          style={styles.actionButton}
-          onPress={navigateToProfile}
-        >
-          <Text style={styles.actionButtonText}>👤 Ver perfil</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.actionButton}
-          onPress={navigateToMascotas}
-        >
-          <Text style={styles.actionButtonText}>🐕 Mis mascotas ({mascotas.length})</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.actionButton}
-          onPress={navigateToAgendarCita}
-        >
-          <Text style={styles.actionButtonText}>📅 Agendar cita</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.actionButton}
-          onPress={navigateToHistorialMedico}
-        >
-          <Text style={styles.actionButtonText}>🏥 Historial médico</Text>
+        <TouchableOpacity style={styles.avatarCircle}>
+          <Text style={{ fontSize: 28 }}>🐾</Text>
         </TouchableOpacity>
       </View>
 
-      <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-        <Text style={styles.logoutButtonText}>Cerrar Sesión</Text>
-      </TouchableOpacity>
+      <View style={styles.content}>
 
-      <View style={styles.footer}>
-        <Text style={styles.footerText}>Sistema Veterinario v2.0</Text>
+        {/* ── Stats ── */}
+        <View style={styles.statsRow}>
+          <StatCard icon="🐾" label="Mascotas"   value={mascotas.length}  color={C.accent}   />
+          <StatCard icon="⏳" label="Pendientes"  value={pendingCount}     color={C.warning}  />
+          <StatCard icon="✅" label="Confirmadas" value={confirmedCount}   color={C.info}     />
+        </View>
+
+        {/* ── Acciones rápidas ── */}
+        <Text style={[S.label, { marginBottom: 14 }]}>Acciones rápidas</Text>
+        <View style={styles.actionsGrid}>
+          <QuickAction
+            icon="🐕" label="Mis mascotas"
+            subtitle={`${mascotas.length} registrada${mascotas.length !== 1 ? 's' : ''}`}
+            onPress={() => router.push('/mascotas')}
+          />
+          <QuickAction
+            icon="📅" label="Agendar cita"
+            subtitle="Reserva tu próxima visita"
+            onPress={() => router.push('/agendar-cita')}
+          />
+          <QuickAction
+            icon="🏥" label="Historial médico"
+            subtitle="Fichas y registros"
+            onPress={() => router.push('/historial-medico')}
+          />
+          <QuickAction
+            icon="👤" label="Mi perfil"
+            subtitle="Ver y editar datos"
+            onPress={() => router.push('/profile')}
+          />
+        </View>
+
+        {/* ── Citas recientes ── */}
+        <Text style={[S.label, { marginBottom: 14, marginTop: 8 }]}>Citas recientes</Text>
+
+        {recentCitas.length === 0 ? (
+          <View style={[S.card, { alignItems: 'center', paddingVertical: 28 }]}>
+            <Text style={{ fontSize: 32, marginBottom: 8 }}>📭</Text>
+            <Text style={S.small}>No tienes citas registradas aún.</Text>
+            <TouchableOpacity
+              style={[S.btnPrimary, { marginTop: 14, paddingHorizontal: 24 }]}
+              onPress={() => router.push('/agendar-cita')}
+            >
+              <Text style={S.btnPrimaryText}>Agendar ahora</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          recentCitas.map(c => {
+            const tipoCfg = TIPO_MAP[(c.tipo_consulta || '').toLowerCase()];
+            const fecha = c.fecha_inicio
+              ? new Date(c.fecha_inicio).toLocaleDateString('es-CR', { weekday: 'short', month: 'short', day: 'numeric' })
+              : '—';
+            const hora = c.fecha_inicio
+              ? new Date(c.fecha_inicio).toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit' })
+              : '';
+            return (
+              <View key={c.id} style={[S.card, styles.citaCard]}>
+                <View style={styles.citaIcon}>
+                  <Text style={{ fontSize: 22 }}>{tipoCfg?.icon ?? '📅'}</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Text style={[S.h3, { fontSize: 15 }]}>{c.mascota_nombre || '—'}</Text>
+                    <StatusBadge estado={c.estado || 'pendiente'} />
+                  </View>
+                  <Text style={[S.small, { marginTop: 4 }]}>
+                    {tipoCfg?.label ?? c.tipo_consulta ?? '—'} • {c.duracion_min} min
+                  </Text>
+                  <Text style={[S.small, { marginTop: 2 }]}>
+                    📆 {fecha}  🕐 {hora}
+                  </Text>
+                  {c.veterinario_nombre ? (
+                    <Text style={[S.small, { marginTop: 2 }]}>👨‍⚕️ {c.veterinario_nombre}</Text>
+                  ) : null}
+                </View>
+              </View>
+            );
+          })
+        )}
+
+        {citas.length > 3 && (
+          <TouchableOpacity
+            style={[S.btnGhost, { marginTop: 4 }]}
+            onPress={() => router.push('/agendar-cita')}
+          >
+            <Text style={S.btnGhostText}>Ver todas las citas ({citas.length})</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* ── Logout ── */}
+        <TouchableOpacity style={[S.btnDanger, { marginTop: 32 }]} onPress={handleLogout}>
+          <Text style={S.btnDangerText}>Cerrar sesión</Text>
+        </TouchableOpacity>
+
+        <Text style={[S.small, { textAlign: 'center', marginTop: 20, marginBottom: 10 }]}>
+          Sistema Veterinario v2.0
+        </Text>
       </View>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F9FAFB',
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 22,
+    paddingTop: 60,
+    paddingBottom: 28,
+    borderBottomWidth: 1,
+    borderBottomColor: C.border,
+    backgroundColor: C.bgCard,
   },
-  centered: {
-    flex: 1,
+  avatarCircle: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: C.accentBg,
+    borderWidth: 2,
+    borderColor: C.accent,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  loadingText: {
-    marginTop: 12,
-    color: '#6B7280',
-  },
-  header: {
-    backgroundColor: '#059669',
-    paddingVertical: 40,
-    paddingHorizontal: 24,
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
-  },
-  greeting: {
-    fontSize: 18,
-    color: '#FFFFFF',
-    opacity: 0.9,
-  },
-  userName: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-    marginTop: 8,
-  },
-  userEmail: {
-    fontSize: 16,
-    color: '#D1FAE5',
-    marginTop: 4,
+  content: {
+    padding: 20,
+    paddingBottom: 40,
   },
   statsRow: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginTop: -20,
-    paddingHorizontal: 16,
-    marginBottom: 30,
+    gap: 10,
+    marginBottom: 28,
+    marginTop: 20,
   },
   statCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 20,
-    alignItems: 'center',
-    width: '28%',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  statNumber: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#111827',
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginTop: 4,
-  },
-  section: {
-    paddingHorizontal: 24,
-    marginBottom: 30,
-  },
-  sectionTitle: {
-    fontSize: 22,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 20,
-  },
-  actionButton: {
-    backgroundColor: '#FFFFFF',
+    flex: 1,
+    backgroundColor: C.bgCard,
     borderRadius: 14,
-    padding: 20,
-    marginBottom: 12,
+    padding: 14,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  actionsGrid: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginBottom: 28,
+  },
+  actionCard: {
+    width: '47%',
+    backgroundColor: C.bgCard,
+    borderRadius: 16,
+    padding: 18,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-    elevation: 2,
+    borderWidth: 1,
+    borderColor: C.border,
   },
-  actionButtonText: {
-    fontSize: 16,
-    color: '#374151',
-    marginLeft: 12,
-  },
-  logoutButton: {
-    backgroundColor: '#EF4444',
-    marginHorizontal: 24,
-    marginVertical: 20,
-    borderRadius: 14,
-    paddingVertical: 18,
+  actionIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: C.accentBg,
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  logoutButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
+  citaCard: {
+    flexDirection: 'row',
+    gap: 14,
+    marginBottom: 10,
+    alignItems: 'flex-start',
   },
-  footer: {
+  citaIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: C.bgElevated,
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 20,
-    marginTop: 10,
-  },
-  footerText: {
-    color: '#9CA3AF',
-    fontSize: 14,
+    borderWidth: 1,
+    borderColor: C.border,
   },
 });

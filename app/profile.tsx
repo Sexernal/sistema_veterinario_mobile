@@ -1,4 +1,3 @@
-// app/profile.tsx
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
@@ -12,8 +11,9 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View
+  View,
 } from 'react-native';
+import { C, S } from '../constants/theme';
 import api, { getCurrentPropietario } from '../services/api';
 
 type Propietario = {
@@ -25,19 +25,70 @@ type Propietario = {
   [k: string]: any;
 };
 
-export default function ProfileScreen() {
-  const [loading, setLoading] = useState<boolean>(true);
-  const [saving, setSaving] = useState<boolean>(false);
-  const [user, setUser] = useState<Propietario | null>(null);
+// ─── Subcomponentes ───────────────────────────────────────────────────────────
 
-  // form
-  const [nombre, setNombre] = useState('');
-  const [email, setEmail] = useState('');
+function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }) {
+  return (
+    <View style={styles.sectionHeader}>
+      <Text style={styles.sectionTitle}>{title}</Text>
+      {subtitle && <Text style={S.small}>{subtitle}</Text>}
+    </View>
+  );
+}
+
+function Field({
+  label,
+  value,
+  onChangeText,
+  placeholder,
+  keyboardType,
+  autoCapitalize,
+  secureTextEntry,
+  editable = true,
+}: {
+  label: string;
+  value: string;
+  onChangeText: (v: string) => void;
+  placeholder?: string;
+  keyboardType?: any;
+  autoCapitalize?: any;
+  secureTextEntry?: boolean;
+  editable?: boolean;
+}) {
+  return (
+    <View style={{ marginBottom: 14 }}>
+      <Text style={[S.label, { marginBottom: 6 }]}>{label}</Text>
+      <TextInput
+        style={[S.input, { marginBottom: 0 }, !editable && { opacity: 0.5 }]}
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor={C.muted}
+        keyboardType={keyboardType}
+        autoCapitalize={autoCapitalize ?? 'none'}
+        secureTextEntry={secureTextEntry}
+        editable={editable}
+      />
+    </View>
+  );
+}
+
+// ─── Pantalla ─────────────────────────────────────────────────────────────────
+
+export default function ProfileScreen() {
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving]   = useState(false);
+  const [user, setUser]       = useState<Propietario | null>(null);
+
+  const [nombre, setNombre]   = useState('');
+  const [email, setEmail]     = useState('');
   const [telefono, setTelefono] = useState('');
   const [direccion, setDireccion] = useState('');
-  const [password, setPassword] = useState(''); // nueva contraseña
+
+  const [showPassSection, setShowPassSection] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [password, setPassword]               = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [currentPassword, setCurrentPassword] = useState(''); // contraseña actual necesaria para cambiar
 
   useEffect(() => {
     (async () => {
@@ -45,104 +96,69 @@ export default function ProfileScreen() {
       try {
         const stored = await getCurrentPropietario();
         if (!stored?.id) {
-          Alert.alert('Error', 'No se encontró sesión. Vuelve a iniciar sesión.');
+          Alert.alert('Sesión expirada', 'Vuelve a iniciar sesión.');
           router.replace('/');
           return;
         }
-        setUser(stored);
-        // rellena form con lo que tengamos
-        setNombre(stored.nombre || '');
-        setEmail(stored.email || '');
-        setTelefono(stored.telefono || '');
-        setDireccion(stored.direccion || '');
+        fillForm(stored);
 
-        // intentar traer versión actual desde API (si token válido)
+        // Refrescar desde API si el token lo permite
         try {
           const res = await api.get(`/propietarios/${stored.id}`);
-          const data = res.data?.data || res.data || null;
+          const data = res.data?.data || res.data;
           if (data) {
-            setUser(data);
-            setNombre(data.nombre || '');
-            setEmail(data.email || '');
-            setTelefono(data.telefono || '');
-            setDireccion(data.direccion || '');
-            // guardar en AsyncStorage la versión actualizada
+            fillForm(data);
             await AsyncStorage.setItem('propietarioData', JSON.stringify(data));
           }
-        } catch (err) {
-          // si falla, no bloqueamos: usamos datos en local
-          console.warn('No se pudo refrescar propietario desde API (puede que el token no permita).', err);
+        } catch {
+          // Usamos datos locales si la API falla — no bloqueamos
         }
-      } catch (err) {
-        console.error('Error inicializando perfil', err);
-        Alert.alert('Error', 'Ocurrió un error cargando tu perfil.');
+      } catch {
+        Alert.alert('Error', 'No se pudo cargar tu perfil.');
       } finally {
         setLoading(false);
       }
     })();
   }, []);
 
-  // conserva + y dígitos y algunos separadores útiles
+  const fillForm = (data: Propietario) => {
+    setUser(data);
+    setNombre(data.nombre || '');
+    setEmail(data.email || '');
+    setTelefono(data.telefono || '');
+    setDireccion(data.direccion || '');
+  };
+
   const cleanPhone = (v: string) => v.replace(/[^0-9+\-\s()]/g, '');
 
-  // Validaciones:
-  // - nombre: al menos 2 palabras (cada una >= 2 chars)
-  // - email: formato básico con @ y dominio
-  // - telefono: debe empezar con "+506" y tener 8 dígitos después (acepta separadores)
-  // - direccion: min 5 chars
-  // - cambio de contraseña: si se quiere cambiar, requiere currentPassword, nueva password (>=8) y confirmación igual
-  const validateForm = () => {
+  const validate = (): string[] => {
     const errs: string[] = [];
-
-    // nombre: al menos dos palabras
     const parts = (nombre || '').trim().split(/\s+/).filter(Boolean);
-    if (parts.length < 2 || parts.some(p => p.length < 2)) {
-      errs.push('Ingresa nombre y apellido (mínimo 2 palabras, cada una con al menos 2 caracteres).');
-    }
-
-    // email básico
-    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-      errs.push('Email inválido. Debe tener formato ejemplo@gmail.com');
-    }
-
-    // telefono: exigir +506 y 8 dígitos
-    const raw = (telefono || '').trim();
-    if (!raw) {
+    if (parts.length < 2 || parts.some(p => p.length < 2))
+      errs.push('Ingresa nombre y apellido (mínimo 2 palabras).');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()))
+      errs.push('Correo inválido.');
+    if (!telefono.trim())
       errs.push('Teléfono requerido.');
-    } else {
-      // quitar todo excepto dígitos para contar
-      const digitsOnly = telefono.replace(/\D/g, '');
-      // debe contener el prefijo 506 y luego 8 dígitos => total 11 dígitos (506 + 8)
-      const startsPlus506 = raw.startsWith('+506');
-      if (!startsPlus506) {
-        errs.push('El teléfono debe comenzar con el prefijo internacional +506.');
-      } else if (digitsOnly.length !== 11 || !digitsOnly.startsWith('506')) {
-        errs.push('Número inválido. Después de +506 debe haber 8 dígitos, ejemplo: +506 8888-8888.');
-      }
-    }
-
-    // dirección
-    if (!direccion || direccion.trim().length < 5) {
+    else if (!telefono.startsWith('+506') || telefono.replace(/\D/g, '').length !== 11)
+      errs.push('Teléfono debe comenzar con +506 y tener 8 dígitos. Ej: +506 8888-8888.');
+    if (!direccion.trim() || direccion.trim().length < 5)
       errs.push('Dirección requerida (mínimo 5 caracteres).');
+    if (showPassSection && password) {
+      if (password.length < 8)    errs.push('Nueva contraseña: mínimo 8 caracteres.');
+      if (password !== confirmPassword) errs.push('Las contraseñas no coinciden.');
+      if (!currentPassword)       errs.push('Ingresa tu contraseña actual para cambiarla.');
     }
-
-    // password logic
-    if (password) {
-      if (password.length < 8) errs.push('La nueva contraseña debe tener al menos 8 caracteres.');
-      if (password !== confirmPassword) errs.push('La nueva contraseña y confirmación no coinciden.');
-      if (!currentPassword) errs.push('Para cambiar la contraseña debes ingresar tu contraseña actual.');
-    }
-
-    if (errs.length) {
-      Alert.alert('Errores', errs.join('\n'));
-      return false;
-    }
-    return true;
+    return errs;
   };
 
   const handleSave = async () => {
-    if (!user?.id) return Alert.alert('Error', 'Usuario no disponible.');
-    if (!validateForm()) return;
+    if (!user?.id) return;
+    const errs = validate();
+    if (errs.length) {
+      Alert.alert('Revisa los datos', errs.join('\n'));
+      return;
+    }
 
     setSaving(true);
     try {
@@ -150,158 +166,194 @@ export default function ProfileScreen() {
         nombre: nombre.trim(),
         email: email.trim(),
         telefono: cleanPhone(telefono),
-        direccion: direccion.trim()
+        direccion: direccion.trim(),
       };
-
-      if (password) {
-        // enviamos la contraseña actual junto a la nueva para que el backend verifique
-        // backend debe aceptar `current_password` y `password` en /propietarios/me
+      if (showPassSection && password) {
         payload.current_password = currentPassword;
         payload.password = password;
       }
 
-      // Llamada: endpoint que actualiza el perfil propio
       const res = await api.put('/propietarios/me', payload);
       const updated = res.data?.data || res.data;
-
-      // actualizar AsyncStorage y estado local
       if (updated) {
         await AsyncStorage.setItem('propietarioData', JSON.stringify(updated));
-        setUser(updated);
-        setNombre(updated.nombre || '');
-        setEmail(updated.email || '');
-        setTelefono(updated.telefono || '');
-        setDireccion(updated.direccion || '');
-        // limpiar campos de contraseña
-        setPassword('');
-        setConfirmPassword('');
-        setCurrentPassword('');
-        Alert.alert('Éxito', 'Perfil actualizado correctamente.');
-      } else {
-        Alert.alert('Éxito', 'Perfil actualizado.');
+        fillForm(updated);
       }
+      // Limpiar campos de contraseña tras guardar
+      setCurrentPassword('');
+      setPassword('');
+      setConfirmPassword('');
+      setShowPassSection(false);
+      Alert.alert('¡Listo!', 'Tu perfil fue actualizado correctamente.');
     } catch (err: any) {
-      console.error('Error actualizando perfil', err);
-      // si 403/401 avisar que es probable que backend no permita updates desde propietario
-      if (err?.response?.status === 403 || err?.response?.status === 401) {
-        Alert.alert(
-          'No autorizado',
-          'El servidor no permitió la actualización. Asegúrate de que el token sea válido y de que el endpoint /propietarios/me acepte current_password si vas a cambiar contraseña.'
-        );
-      } else {
-        const msg = err?.response?.data?.message || err?.message || 'Error actualizando perfil';
-        Alert.alert('Error', msg);
-      }
+      const msg = err?.response?.data?.message || err?.message || 'Error al guardar.';
+      Alert.alert('Error', msg);
     } finally {
       setSaving(false);
     }
   };
 
-  const goBackToDashboard = () => {
-    // usamos replace para evitar push a rutas inválidas en expo
-    router.replace('/dashboard');
-  };
-
   if (loading) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#059669" />
-        <Text style={{ marginTop: 10 }}>Cargando perfil...</Text>
+      <View style={S.centered}>
+        <ActivityIndicator size="large" color={C.accent} />
+        <Text style={[S.small, { marginTop: 12 }]}>Cargando perfil...</Text>
       </View>
     );
   }
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
-      <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 40 }}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Mi perfil</Text>
-          <Text style={styles.subtitle}>Visualiza y actualiza tu información</Text>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      style={S.screen}
+    >
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()}>
+          <Text style={{ color: C.accent, fontSize: 16, fontWeight: '600' }}>‹ Volver</Text>
+        </TouchableOpacity>
+        <Text style={S.h2}>Mi perfil</Text>
+        <Text style={S.small}>Visualiza y edita tu información</Text>
+      </View>
+
+      <ScrollView
+        contentContainerStyle={{ padding: 20, paddingBottom: 50 }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* Avatar */}
+        <View style={styles.avatar}>
+          <Text style={{ fontSize: 40 }}>👤</Text>
+          <Text style={[S.h2, { marginTop: 10 }]}>{user?.nombre || '—'}</Text>
+          <Text style={S.small}>{user?.email || ''}</Text>
         </View>
 
-        <View style={{ padding: 16 }}>
-          <Text style={styles.label}>Nombre</Text>
-          <TextInput
-            style={styles.input}
+        {/* Información personal */}
+        <SectionHeader title="Información personal" />
+        <View style={S.card}>
+          <Field
+            label="NOMBRE COMPLETO"
             value={nombre}
             onChangeText={setNombre}
             placeholder="Nombre Apellido"
             autoCapitalize="words"
-            returnKeyType="done"
           />
-
-          <Text style={styles.label}>Email</Text>
-          <TextInput
-            style={styles.input}
+          <Field
+            label="CORREO ELECTRÓNICO"
             value={email}
             onChangeText={setEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
             placeholder="ejemplo@gmail.com"
-            textContentType="emailAddress"
+            keyboardType="email-address"
           />
-
-          <Text style={styles.label}>Teléfono</Text>
-          <TextInput
-            style={styles.input}
-            value={telefono}
-            onChangeText={v => setTelefono(cleanPhone(v))}
-            keyboardType="phone-pad"
-            placeholder="+506 8888-8888"
-            textContentType="telephoneNumber"
-          />
-
-          <Text style={styles.label}>Dirección</Text>
-          <TextInput
-            style={styles.input}
-            value={direccion}
-            onChangeText={setDireccion}
-            placeholder="Calle, número, ciudad"
-          />
-
-          <Text style={[styles.label, { marginTop: 12 }]}>Cambiar contraseña (opcional)</Text>
-          <TextInput
-            style={styles.input}
-            value={currentPassword}
-            onChangeText={setCurrentPassword}
-            secureTextEntry
-            placeholder="Contraseña actual (requerida para cambiar)"
-          />
-          <TextInput
-            style={styles.input}
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-            placeholder="Nueva contraseña (mín 8)"
-          />
-          <TextInput
-            style={styles.input}
-            value={confirmPassword}
-            onChangeText={setConfirmPassword}
-            secureTextEntry
-            placeholder="Confirmar nueva contraseña"
-          />
-
-          <TouchableOpacity style={[styles.saveButton, saving && { opacity: 0.7 }]} onPress={handleSave} disabled={saving}>
-            {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveButtonText}>Guardar cambios</Text>}
-          </TouchableOpacity>
         </View>
 
+        {/* Contacto */}
+        <SectionHeader title="Contacto" />
+        <View style={S.card}>
+          <Field
+            label="TELÉFONO"
+            value={telefono}
+            onChangeText={v => setTelefono(cleanPhone(v))}
+            placeholder="+506 8888-8888"
+            keyboardType="phone-pad"
+          />
+          <Field
+            label="DIRECCIÓN"
+            value={direccion}
+            onChangeText={setDireccion}
+            placeholder="Provincia, cantón, dirección exacta"
+            autoCapitalize="sentences"
+          />
+        </View>
+
+        {/* Seguridad */}
+        <SectionHeader title="Seguridad" />
+        <TouchableOpacity
+          style={[S.card, styles.togglePass]}
+          onPress={() => setShowPassSection(v => !v)}
+          activeOpacity={0.8}
+        >
+          <Text style={S.body}>🔐 Cambiar contraseña</Text>
+          <Text style={{ color: C.subtext, fontSize: 18 }}>
+            {showPassSection ? '▲' : '▼'}
+          </Text>
+        </TouchableOpacity>
+
+        {showPassSection && (
+          <View style={[S.card, { marginTop: 8 }]}>
+            <Field
+              label="CONTRASEÑA ACTUAL"
+              value={currentPassword}
+              onChangeText={setCurrentPassword}
+              placeholder="Tu contraseña actual"
+              secureTextEntry
+            />
+            <Field
+              label="NUEVA CONTRASEÑA"
+              value={password}
+              onChangeText={setPassword}
+              placeholder="Mínimo 8 caracteres"
+              secureTextEntry
+            />
+            <Field
+              label="CONFIRMAR NUEVA CONTRASEÑA"
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+              placeholder="Repite la nueva contraseña"
+              secureTextEntry
+            />
+          </View>
+        )}
+
+        {/* Guardar */}
+        <TouchableOpacity
+          style={[S.btnPrimary, { marginTop: 24 }, saving && { opacity: 0.6 }]}
+          onPress={handleSave}
+          disabled={saving}
+        >
+          {saving
+            ? <ActivityIndicator color={C.accentText} />
+            : <Text style={S.btnPrimaryText}>Guardar cambios</Text>
+          }
+        </TouchableOpacity>
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F9FAFB' },
-  header: { backgroundColor: '#059669', paddingVertical: 28, paddingHorizontal: 18, borderBottomLeftRadius: 20, borderBottomRightRadius: 20 },
-  title: { color: '#fff', fontSize: 20, fontWeight: '700' },
-  subtitle: { color: '#D1FAE5', marginTop: 4 },
-  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  label: { marginTop: 10, marginBottom: 6, marginLeft: 6, fontWeight: '600' },
-  input: { backgroundColor: '#fff', borderRadius: 8, padding: 12, borderWidth: 1, borderColor: '#e5e7eb', marginBottom: 8 },
-  saveButton: { backgroundColor: '#059669', padding: 14, borderRadius: 10, alignItems: 'center', marginTop: 8 },
-  saveButtonText: { color: '#fff', fontWeight: '700' },
-  backButton: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#e5e7eb', padding: 12, borderRadius: 10, alignItems: 'center', marginTop: 10 },
-  backButtonText: { color: '#374151', fontWeight: '700' },
+  header: {
+    paddingTop: 56,
+    paddingBottom: 20,
+    paddingHorizontal: 20,
+    gap: 6,
+    backgroundColor: C.bgCard,
+    borderBottomWidth: 1,
+    borderBottomColor: C.border,
+  },
+  avatar: {
+    alignItems: 'center',
+    paddingVertical: 28,
+    marginBottom: 8,
+    backgroundColor: C.bgCard,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  sectionHeader: {
+    marginBottom: 10,
+    marginTop: 20,
+    gap: 3,
+  },
+  sectionTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: C.accent,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  togglePass: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
 });

@@ -12,133 +12,138 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { C, S } from '../constants/theme';
 import { loginPropietario } from '../services/api';
 
 export default function LoginScreen() {
-  const [email, setEmail] = useState<string>('');
-  const [password, setPassword] = useState<string>('');
-  const [loading, setLoading] = useState<boolean>(false);
+  const [email, setEmail]       = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading]   = useState(false);
+  const [showPass, setShowPass] = useState(false);
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
-      Alert.alert('Error', 'Por favor ingresa tu correo y contraseña');
+      Alert.alert('Campos requeridos', 'Ingresa tu correo y contraseña.');
       return;
     }
-
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      Alert.alert('Error', 'Ingresa un correo electrónico válido');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      Alert.alert('Correo inválido', 'Ingresa un correo electrónico válido.');
       return;
     }
-
     setLoading(true);
-
     try {
-      const result = await loginPropietario({ email, password });
-      
+      const result = await loginPropietario({ email: email.trim(), password });
       if (result.success && result.propietario) {
-        console.log('Login exitoso, propietario:', result.propietario);
-        Alert.alert('¡Éxito!', `Bienvenido ${result.propietario.nombre || 'Propietario'}`, [
-          { text: 'Continuar', onPress: () => router.replace('/home') }
-        ]);
+        router.replace('/home');
       } else {
-        Alert.alert('Error', result.message || 'Credenciales incorrectas');
+        Alert.alert('Acceso denegado', result.message || 'Credenciales incorrectas.');
       }
     } catch (error: any) {
-      console.error('Error completo en login:', error);
-      
-      if (error.message?.includes('network') || error.message?.includes('conexión')) {
-        Alert.alert(
-          'Error de conexión',
-          'No se pudo conectar al servidor. Verifica:\n\n• Tu conexión a internet\n• Que el servidor esté encendido'
-        );
-      } else if (error.status === 401) {
-        Alert.alert('Acceso denegado', 'Email o contraseña incorrectos');
+      if (error.status === 401) {
+        Alert.alert('Acceso denegado', 'Email o contraseña incorrectos.');
       } else {
-        Alert.alert('Error', error.message || 'Ocurrió un error inesperado');
+        Alert.alert('Error de conexión', 'No se pudo conectar al servidor. Verifica tu internet.');
       }
     } finally {
       setLoading(false);
     }
   };
 
-  const handleRegister = () => {
-    Alert.alert('Información', 'Para registrarte como propietario, contacta a la veterinaria directamente.');
-  };
-
-  const handleForgotPassword = () => {
-    Alert.alert('Recuperar contraseña', 'Contacta a la veterinaria para restablecer tu contraseña.');
-  };
-
   return (
-    <KeyboardAvoidingView 
+    <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.container}
+      style={S.screen}
     >
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
-        <View style={styles.header}>
-          <Text style={styles.title}>🐾 VetCare Clinic</Text>
-          <Text style={styles.subtitle}>Acceso para propietarios de mascotas</Text>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        {/* ── Brand ── */}
+        <View style={styles.brand}>
+          <View style={styles.logoCircle}>
+            <Text style={styles.logoEmoji}>🐾</Text>
+          </View>
+          <Text style={styles.brandName}>VetCare</Text>
+          <Text style={styles.brandSub}>Sistema veterinario</Text>
         </View>
 
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Inicio de sesión</Text>
-          
-          <Text style={styles.label}>Correo electrónico registrado</Text>
+        {/* ── Formulario ── */}
+        <View style={[S.card, styles.form]}>
+          <Text style={styles.formTitle}>Bienvenido de nuevo</Text>
+          <Text style={[S.small, { marginBottom: 24, textAlign: 'center' }]}>
+            Ingresa con tu cuenta de propietario
+          </Text>
+
+          <Text style={styles.fieldLabel}>CORREO ELECTRÓNICO</Text>
           <TextInput
-            style={styles.input}
+            style={S.input}
             placeholder="ejemplo@gmail.com"
+            placeholderTextColor={C.muted}
             value={email}
             onChangeText={setEmail}
             autoCapitalize="none"
             keyboardType="email-address"
             editable={!loading}
           />
-          
-          <Text style={styles.label}>Contraseña</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="••••••••"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-            editable={!loading}
-          />
-          
+
+          <Text style={styles.fieldLabel}>CONTRASEÑA</Text>
+          <View style={styles.passWrapper}>
+            <TextInput
+              style={[S.input, { flex: 1, marginBottom: 0 }]}
+              placeholder="••••••••"
+              placeholderTextColor={C.muted}
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry={!showPass}
+              editable={!loading}
+            />
+            <TouchableOpacity
+              style={styles.eyeBtn}
+              onPress={() => setShowPass(v => !v)}
+            >
+              <Text style={{ color: C.subtext, fontSize: 18 }}>
+                {showPass ? '🙈' : '👁'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
           <TouchableOpacity
-            style={[styles.button, loading && styles.buttonDisabled]}
+            style={[S.btnPrimary, { marginTop: 20, marginBottom: 14 }, loading && { opacity: 0.6 }]}
             onPress={handleLogin}
             disabled={loading}
           >
-            {loading ? (
-              <ActivityIndicator color="#FFFFFF" />
-            ) : (
-              <Text style={styles.buttonText}>Acceder como Propietario</Text>
-            )}
+            {loading
+              ? <ActivityIndicator color={C.accentText} />
+              : <Text style={S.btnPrimaryText}>Acceder</Text>
+            }
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.linkButton} onPress={handleForgotPassword}>
-            <Text style={styles.linkText}>¿Olvidaste tu contraseña?</Text>
+          <TouchableOpacity
+            style={{ alignItems: 'center' }}
+            onPress={() => Alert.alert('Recuperar contraseña', 'Contacta a la veterinaria para restablecer tu contraseña.')}
+          >
+            <Text style={{ color: C.accent, fontSize: 13, fontWeight: '600' }}>
+              ¿Olvidaste tu contraseña?
+            </Text>
           </TouchableOpacity>
         </View>
 
+        {/* ── Info ── */}
         <View style={styles.infoBox}>
-          <Text style={styles.infoTitle}>📋 Información importante</Text>
-          <Text style={styles.infoText}>
-            • Usa el mismo email y contraseña que te proporcionó la veterinaria al crear tu cuenta
-          </Text>
-          <Text style={styles.infoText}>
-            • Si no tienes cuenta, debes ir personalmente o contactar con recepción al número +506 7777-9999
-          </Text>
-          <Text style={styles.infoText}>
-            • Para emergencias (en caso de que sea día feriado o domingos), llama al: +506 8888-8888
-          </Text>
+          <Text style={styles.infoTitle}>📋 Importante</Text>
+          <Text style={styles.infoLine}>• Usa el email y contraseña que te proporcionó la veterinaria.</Text>
+          <Text style={styles.infoLine}>• Para crear una cuenta, visita la clínica o llama al +506 7777-9999.</Text>
+          <Text style={styles.infoLine}>• Emergencias (feriados / domingos): +506 8888-8888.</Text>
         </View>
 
+        {/* ── Footer ── */}
         <View style={styles.footer}>
-          <Text style={styles.footerText}>¿Eres nuevo en el sistema?</Text>
-          <TouchableOpacity onPress={handleRegister}>
-            <Text style={styles.registerText}>Solicitar registro</Text>
+          <Text style={[S.small, { textAlign: 'center' }]}>¿Primera vez en el sistema?</Text>
+          <TouchableOpacity
+            onPress={() => Alert.alert('Registro', 'Para registrarte como propietario, contacta a la veterinaria directamente.')}
+          >
+            <Text style={[styles.registerLink]}>Solicitar registro</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -147,125 +152,100 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F3F4F6',
-  },
-  scrollContainer: {
+  scroll: {
     flexGrow: 1,
-    justifyContent: 'center',
-    padding: 20,
-  },
-  header: {
-    alignItems: 'center',
-    marginBottom: 30,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#059669',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#6B7280',
-    textAlign: 'center',
-  },
-  card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
     padding: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 5,
+    paddingTop: 60,
+    paddingBottom: 40,
+    backgroundColor: C.bg,
   },
-  cardTitle: {
-    fontSize: 24,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 24,
-    textAlign: 'center',
+  brand: {
+    alignItems: 'center',
+    marginBottom: 36,
   },
-  label: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#374151',
-    marginBottom: 8,
-    marginLeft: 4,
-  },
-  input: {
-    height: 56,
-    backgroundColor: '#F9FAFB',
-    borderWidth: 1,
-    borderColor: '#D1D5DB',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    marginBottom: 20,
-    fontSize: 16,
-    color: '#111827',
-  },
-  button: {
-    height: 56,
-    backgroundColor: '#059669',
-    borderRadius: 12,
+  logoCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: C.accentBg,
+    borderWidth: 2,
+    borderColor: C.accent,
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 10,
+    marginBottom: 16,
+  },
+  logoEmoji: {
+    fontSize: 36,
+  },
+  brandName: {
+    fontSize: 34,
+    fontWeight: '800',
+    color: C.text,
+    letterSpacing: -1,
+  },
+  brandSub: {
+    fontSize: 14,
+    color: C.subtext,
+    marginTop: 4,
+  },
+  form: {
     marginBottom: 20,
   },
-  buttonDisabled: {
-    backgroundColor: '#34D399',
+  formTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: C.text,
+    textAlign: 'center',
+    marginBottom: 4,
   },
-  buttonText: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: '600',
+  fieldLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: C.subtext,
+    letterSpacing: 0.8,
+    marginBottom: 6,
+    marginLeft: 2,
   },
-  linkButton: {
+  passWrapper: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 10,
+    gap: 8,
+    marginBottom: 4,
   },
-  linkText: {
-    color: '#059669',
-    fontSize: 14,
-    fontWeight: '500',
+  eyeBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 14,
   },
   infoBox: {
-    backgroundColor: '#DBEAFE',
-    borderRadius: 12,
+    backgroundColor: 'rgba(59,130,246,0.08)',
+    borderRadius: 14,
     padding: 16,
-    marginTop: 24,
-    borderLeftWidth: 4,
-    borderLeftColor: '#3B82F6',
+    borderLeftWidth: 3,
+    borderLeftColor: C.info,
+    marginBottom: 28,
   },
   infoTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1E40AF',
-    marginBottom: 8,
-  },
-  infoText: {
     fontSize: 14,
-    color: '#374151',
+    fontWeight: '700',
+    color: C.text,
+    marginBottom: 10,
+  },
+  infoLine: {
+    fontSize: 13,
+    color: C.subtext,
     lineHeight: 20,
+    marginBottom: 4,
   },
   footer: {
     alignItems: 'center',
-    marginTop: 32,
-    paddingTop: 20,
+    gap: 8,
+    paddingTop: 4,
     borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
+    borderTopColor: C.border,
   },
-  footerText: {
-    color: '#6B7280',
-    fontSize: 14,
-    marginBottom: 8,
-  },
-  registerText: {
-    color: '#059669',
-    fontSize: 16,
-    fontWeight: '600',
+  registerLink: {
+    color: C.accent,
+    fontSize: 15,
+    fontWeight: '700',
   },
 });

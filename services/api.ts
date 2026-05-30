@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 
 // 📌 Tu IP local y puerto
-const API_URL = 'https://api-express-mysql-produccion.vercel.app/api/v1';
+const API_URL = 'http://192.168.1.9:3001/api/v1';
 
 interface LoginCredentials {
   email: string;
