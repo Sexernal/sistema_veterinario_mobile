@@ -16,23 +16,23 @@ import { C, S } from '../constants/theme';
 import { loginPropietario } from '../services/api';
 
 export default function LoginScreen() {
-  const [email, setEmail]       = useState('');
+  const [cedula, setCedula]     = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading]   = useState(false);
   const [showPass, setShowPass] = useState(false);
 
   const handleLogin = async () => {
-    if (!email.trim() || !password.trim()) {
-      Alert.alert('Campos requeridos', 'Ingresa tu correo y contraseña.');
+    if (!cedula.trim() || !password.trim()) {
+      Alert.alert('Campos requeridos', 'Ingresa tu cédula y contraseña.');
       return;
     }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      Alert.alert('Correo inválido', 'Ingresa un correo electrónico válido.');
+    if (!/^\d{9}$/.test(cedula.trim())) {
+      Alert.alert('Cédula inválida', 'La cédula debe tener exactamente 9 dígitos numéricos.');
       return;
     }
     setLoading(true);
     try {
-      const result = await loginPropietario({ email: email.trim(), password });
+      const result = await loginPropietario({ cedula: cedula.trim(), password });
       if (result.success && result.propietario) {
         router.replace('/home');
       } else {
@@ -40,7 +40,7 @@ export default function LoginScreen() {
       }
     } catch (error: any) {
       if (error.status === 401) {
-        Alert.alert('Acceso denegado', 'Email o contraseña incorrectos.');
+        Alert.alert('Acceso denegado', 'Cédula o contraseña incorrectos.');
       } else {
         Alert.alert('Error de conexión', 'No se pudo conectar al servidor. Verifica tu internet.');
       }
@@ -75,15 +75,16 @@ export default function LoginScreen() {
             Ingresa con tu cuenta de propietario
           </Text>
 
-          <Text style={styles.fieldLabel}>CORREO ELECTRÓNICO</Text>
+          <Text style={styles.fieldLabel}>CÉDULA</Text>
           <TextInput
             style={S.input}
-            placeholder="ejemplo@gmail.com"
+            placeholder="000000000"
             placeholderTextColor={C.muted}
-            value={email}
-            onChangeText={setEmail}
+            value={cedula}
+            onChangeText={setCedula}
             autoCapitalize="none"
-            keyboardType="email-address"
+            keyboardType="number-pad"
+            maxLength={9}
             editable={!loading}
           />
 
@@ -132,7 +133,7 @@ export default function LoginScreen() {
         {/* ── Info ── */}
         <View style={styles.infoBox}>
           <Text style={styles.infoTitle}>📋 Importante</Text>
-          <Text style={styles.infoLine}>• Usa el email y contraseña que te proporcionó la veterinaria.</Text>
+          <Text style={styles.infoLine}>• Usa la cédula y contraseña que te proporcionó la veterinaria.</Text>
           <Text style={styles.infoLine}>• Para crear una cuenta, visita la clínica o llama al +506 7777-9999.</Text>
           <Text style={styles.infoLine}>• Emergencias (feriados / domingos): +506 8888-8888.</Text>
         </View>

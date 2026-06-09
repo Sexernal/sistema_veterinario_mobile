@@ -1,6 +1,6 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { router } from 'expo-router';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -57,8 +57,6 @@ const formatDateTime = (iso: string) => {
   });
 };
 
-// ─── StatusBadge ──────────────────────────────────────────────────────────────
-
 function StatusBadge({ estado }: { estado?: string }) {
   const cfg = STATUS_MAP[(estado || '').toLowerCase()] ?? STATUS_MAP.pendiente;
   return (
@@ -74,8 +72,6 @@ function StatusBadge({ estado }: { estado?: string }) {
   );
 }
 
-// ─── CitaCard ─────────────────────────────────────────────────────────────────
-
 function CitaCard({ cita, onPress }: { cita: Cita; onPress: () => void }) {
   const tipo = TIPO_MAP[(cita.tipo_consulta || '').toLowerCase()];
   return (
@@ -90,37 +86,34 @@ function CitaCard({ cita, onPress }: { cita: Cita; onPress: () => void }) {
         </View>
         <Text style={S.small}>{tipo?.label ?? cita.tipo_consulta ?? '—'} · {cita.duracion_min} min</Text>
         <Text style={S.small}>📆 {formatDateTime(cita.fecha_inicio)}</Text>
-        {cita.veterinario_nombre && (
-          <Text style={S.small}>👨‍⚕️ {cita.veterinario_nombre}</Text>
-        )}
+        {cita.veterinario_nombre
+          ? <Text style={S.small}>👨‍⚕️ {cita.veterinario_nombre}</Text>
+          : <Text style={[S.small, { color: C.muted }]}>👨‍⚕️ Doctor por asignar</Text>
+        }
       </View>
     </TouchableOpacity>
   );
 }
-
-// ─── Pantalla principal ───────────────────────────────────────────────────────
 
 export default function AgendarCitaScreen() {
   const [loading, setLoading]   = useState(true);
   const [user, setUser]         = useState<Propietario | null>(null);
   const [mascotas, setMascotas] = useState<Mascota[]>([]);
   const [citas, setCitas]       = useState<Cita[]>([]);
-  const [veterinarios, setVeterinarios] = useState<any[]>([]);
   const [showCreate, setShowCreate]     = useState(false);
   const [detailCita, setDetailCita]     = useState<Cita | null>(null);
 
   // Form
-  const [selectedMascotaId, setSelectedMascotaId]     = useState<number | null>(null);
-  const [selectedVetId, setSelectedVetId]             = useState<number | null>(null);
-  const [tipoConsulta, setTipoConsulta]               = useState('consulta general');
-  const [selectedDate, setSelectedDate]               = useState<Date | null>(null);
-  const [showDatePicker, setShowDatePicker]           = useState(false);
-  const [slotSelected, setSlotSelected]               = useState<string | null>(null);
-  const [duracionMin, setDuracionMin]                 = useState(30);
-  const [motivo, setMotivo]                           = useState('');
-  const [slotsByVet, setSlotsByVet]                   = useState<Record<string, Slot[]>>({});
-  const [slotsLoading, setSlotsLoading]               = useState(false);
-  const [creating, setCreating]                       = useState(false);
+  const [selectedMascotaId, setSelectedMascotaId] = useState<number | null>(null);
+  const [tipoConsulta, setTipoConsulta]            = useState('consulta general');
+  const [selectedDate, setSelectedDate]            = useState<Date | null>(null);
+  const [showDatePicker, setShowDatePicker]        = useState(false);
+  const [slotSelected, setSlotSelected]            = useState<string | null>(null);
+  const [duracionMin, setDuracionMin]              = useState(30);
+  const [motivo, setMotivo]                        = useState('');
+  const [slotsByVet, setSlotsByVet]                = useState<Record<string, Slot[]>>({});
+  const [slotsLoading, setSlotsLoading]            = useState(false);
+  const [creating, setCreating]                    = useState(false);
 
   const mountedRef = useRef(true);
   useEffect(() => () => { mountedRef.current = false; }, []);
@@ -139,14 +132,6 @@ export default function AgendarCitaScreen() {
           setMascotas(m || []);
           setCitas(c || []);
         }
-        try {
-          const uRes = await api.get('/users?page=1&limit=500');
-          setVeterinarios(
-            (uRes.data?.data || []).filter((u: any) => (u.role || '').toLowerCase() === 'admin')
-          );
-        } catch {
-          setVeterinarios([]);
-        }
       } catch {
         Alert.alert('Error', 'No se pudieron cargar los datos.');
       } finally {
@@ -155,18 +140,31 @@ export default function AgendarCitaScreen() {
     })();
   }, []);
 
-  // Duración automática al cambiar tipo
   useEffect(() => {
     setDuracionMin(TIPO_MAP[(tipoConsulta || '').toLowerCase()]?.durationMin ?? 30);
     setSlotSelected(null);
     setSlotsByVet({});
   }, [tipoConsulta]);
 
-  // Auto-fetch slots al cambiar fecha (igual que el web)
   useEffect(() => {
     if (!selectedDate) return;
     fetchSlots(selectedDate);
-  }, [selectedDate, tipoConsulta, selectedVetId]);
+  }, [selectedDate, tipoConsulta]);
+
+  // Flatten slots from all vets, deduplicate by timeStr
+  const flatSlots = useMemo<Slot[]>(() => {
+    const seen = new Set<string>();
+    const out: Slot[] = [];
+    for (const slots of Object.values(slotsByVet)) {
+      for (const s of slots) {
+        if (!seen.has(s.timeStr)) {
+          seen.add(s.timeStr);
+          out.push(s);
+        }
+      }
+    }
+    return out.sort((a, b) => a.startIsoLocal.localeCompare(b.startIsoLocal));
+  }, [slotsByVet]);
 
   const fetchSlots = async (date: Date) => {
     const fechaStr = dateToYMD(date);
@@ -174,8 +172,9 @@ export default function AgendarCitaScreen() {
     setSlotsByVet({});
     setSlotSelected(null);
     try {
-      const q = `/citas/slots?date=${encodeURIComponent(fechaStr)}&tipo=${encodeURIComponent(tipoConsulta)}${selectedVetId ? `&veterinario_id=${selectedVetId}` : ''}`;
-      const res = await api.get(q);
+      const res = await api.get(
+        `/citas/slots?date=${encodeURIComponent(fechaStr)}&tipo=${encodeURIComponent(tipoConsulta)}`
+      );
       if (mountedRef.current) {
         setSlotsByVet(
           res.data?.success && res.data?.data?.slotsByVet
@@ -185,7 +184,7 @@ export default function AgendarCitaScreen() {
       }
     } catch {
       if (mountedRef.current) {
-        Alert.alert('Sin horarios', 'No se pudieron obtener los horarios disponibles. Intenta con otra fecha.');
+        Alert.alert('Sin horarios', 'No se pudieron obtener los horarios disponibles.');
         setSlotsByVet({});
       }
     } finally {
@@ -215,14 +214,11 @@ export default function AgendarCitaScreen() {
 
   const refreshCitas = async () => {
     if (!user?.id) return;
-    try {
-      setCitas((await getCitasByPropietario(user.id)) || []);
-    } catch {}
+    try { setCitas((await getCitasByPropietario(user.id)) || []); } catch {}
   };
 
   const resetForm = () => {
     setSelectedMascotaId(null);
-    setSelectedVetId(null);
     setTipoConsulta('consulta general');
     setSelectedDate(null);
     setSlotSelected(null);
@@ -231,10 +227,10 @@ export default function AgendarCitaScreen() {
   };
 
   const validateAndCreate = async () => {
-    if (!user?.id)             return Alert.alert('Error', 'No estás autenticado.');
-    if (!selectedMascotaId)    return Alert.alert('Mascota requerida', 'Selecciona una mascota.');
-    if (!selectedDate)         return Alert.alert('Fecha requerida', 'Selecciona una fecha.');
-    if (!slotSelected)         return Alert.alert('Horario requerido', 'Selecciona una franja horaria.');
+    if (!user?.id)          return Alert.alert('Error', 'No estás autenticado.');
+    if (!selectedMascotaId) return Alert.alert('Mascota requerida', 'Selecciona una mascota.');
+    if (!selectedDate)      return Alert.alert('Fecha requerida', 'Selecciona una fecha.');
+    if (!slotSelected)      return Alert.alert('Horario requerido', 'Selecciona una franja horaria.');
     if (new Date(slotSelected) < new Date())
       return Alert.alert('Hora inválida', 'No puedes agendar en el pasado.');
 
@@ -243,14 +239,13 @@ export default function AgendarCitaScreen() {
       const payload = {
         mascota_id:     Number(selectedMascotaId),
         propietario_id: Number(user.id),
-        veterinario_id: selectedVetId ? Number(selectedVetId) : null,
         tipo_consulta:  tipoConsulta,
         motivo:         motivo || null,
         fecha_inicio:   toSQLDatetime(slotSelected),
         duracion_min:   Number(duracionMin),
       };
       await api.post('/citas', payload);
-      Alert.alert('¡Cita agendada!', 'Tu cita fue creada correctamente.');
+      Alert.alert('¡Cita agendada!', 'Tu cita fue creada. La clínica te asignará un médico.');
       setShowCreate(false);
       resetForm();
       await refreshCitas();
@@ -278,7 +273,6 @@ export default function AgendarCitaScreen() {
 
   return (
     <View style={S.screen}>
-      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()}>
           <Text style={{ color: C.accent, fontSize: 16, fontWeight: '600' }}>‹ Volver</Text>
@@ -287,14 +281,12 @@ export default function AgendarCitaScreen() {
         <Text style={S.small}>{citas.length} cita{citas.length !== 1 ? 's' : ''} en total</Text>
       </View>
 
-      {/* Botón crear */}
       <View style={{ padding: 16, paddingBottom: 8 }}>
         <TouchableOpacity style={S.btnPrimary} onPress={() => setShowCreate(true)}>
           <Text style={S.btnPrimaryText}>+ Agendar nueva cita</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Lista de citas */}
       <FlatList
         data={citas}
         keyExtractor={item => String(item.id)}
@@ -317,7 +309,6 @@ export default function AgendarCitaScreen() {
       {/* ── Modal Crear Cita ── */}
       <Modal visible={showCreate} animationType="slide" onRequestClose={() => { setShowCreate(false); resetForm(); }}>
         <View style={[S.screen, { paddingTop: 0 }]}>
-          {/* Header modal */}
           <View style={styles.modalHeader}>
             <Text style={S.h2}>Nueva cita</Text>
             <TouchableOpacity
@@ -333,6 +324,13 @@ export default function AgendarCitaScreen() {
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
           >
+            {/* Aviso doctor */}
+            <View style={styles.infoNote}>
+              <Text style={{ fontSize: 13, color: C.info, fontWeight: '600' }}>
+                👨‍⚕️ El médico que te atenderá será asignado por la clínica.
+              </Text>
+            </View>
+
             {/* Mascota */}
             <Text style={[S.label, { marginBottom: 8 }]}>MASCOTA</Text>
             <View style={{ gap: 8, marginBottom: 20 }}>
@@ -353,32 +351,6 @@ export default function AgendarCitaScreen() {
                         {m.nombre}
                       </Text>
                       {m.especie && <Text style={S.small}>{m.especie}</Text>}
-                    </View>
-                    {selected && <Text style={{ color: C.accent }}>✓</Text>}
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            {/* Veterinario */}
-            <Text style={[S.label, { marginBottom: 8 }]}>VETERINARIO (opcional)</Text>
-            <View style={{ gap: 8, marginBottom: 20 }}>
-              {[{ id: null, label: '— Cualquiera —', sub: 'Se asignará automáticamente' },
-                ...veterinarios.map(v => ({ id: v.id, label: v.nombre, sub: v.email }))
-              ].map(v => {
-                const selected = selectedVetId === v.id;
-                return (
-                  <TouchableOpacity
-                    key={String(v.id)}
-                    style={[styles.selectorOption, selected && styles.selectorSelected]}
-                    onPress={() => setSelectedVetId(v.id)}
-                  >
-                    <Text style={{ fontSize: 20 }}>👨‍⚕️</Text>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[S.body, selected && { color: C.accent, fontWeight: '700' }]}>
-                        {v.label}
-                      </Text>
-                      {v.sub && <Text style={S.small}>{v.sub}</Text>}
                     </View>
                     {selected && <Text style={{ color: C.accent }}>✓</Text>}
                   </TouchableOpacity>
@@ -444,42 +416,31 @@ export default function AgendarCitaScreen() {
                     <ActivityIndicator color={C.accent} />
                     <Text style={[S.small, { marginTop: 8 }]}>Buscando horarios...</Text>
                   </View>
-                ) : Object.keys(slotsByVet).length === 0 ? (
+                ) : flatSlots.length === 0 ? (
                   <View style={[S.cardElevated, { alignItems: 'center', padding: 24 }]}>
                     <Text style={{ fontSize: 32, marginBottom: 8 }}>😔</Text>
                     <Text style={S.small}>Sin horarios disponibles para esta fecha y tipo.</Text>
                     <Text style={[S.small, { marginTop: 4 }]}>Prueba otra fecha o cambia el tipo.</Text>
                   </View>
                 ) : (
-                  Object.entries(slotsByVet).map(([vid, slots]) => {
-                    const vet = veterinarios.find(v => String(v.id) === String(vid));
-                    return (
-                      <View key={vid} style={[S.card, { marginBottom: 12 }]}>
-                        <Text style={[S.body, { fontWeight: '700', marginBottom: 12 }]}>
-                          👨‍⚕️ {vet?.nombre ?? `Veterinario ${vid}`}
-                        </Text>
-                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                          {(slots as Slot[]).map(s => {
-                            const isSelected = slotSelected === s.startIsoLocal;
-                            return (
-                              <TouchableOpacity
-                                key={s.startIsoLocal}
-                                style={[styles.slotBtn, isSelected && styles.slotBtnSelected]}
-                                onPress={() => {
-                                  setSlotSelected(s.startIsoLocal);
-                                  if (!selectedVetId) setSelectedVetId(Number(vid));
-                                }}
-                              >
-                                <Text style={[styles.slotText, isSelected && styles.slotTextSelected]}>
-                                  {s.timeStr}
-                                </Text>
-                              </TouchableOpacity>
-                            );
-                          })}
-                        </View>
-                      </View>
-                    );
-                  })
+                  <View style={[S.card, { marginBottom: 12 }]}>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                      {flatSlots.map(s => {
+                        const isSelected = slotSelected === s.startIsoLocal;
+                        return (
+                          <TouchableOpacity
+                            key={s.startIsoLocal}
+                            style={[styles.slotBtn, isSelected && styles.slotBtnSelected]}
+                            onPress={() => setSlotSelected(s.startIsoLocal)}
+                          >
+                            <Text style={[styles.slotText, isSelected && styles.slotTextSelected]}>
+                              {s.timeStr}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </View>
                 )}
               </>
             )}
@@ -495,7 +456,6 @@ export default function AgendarCitaScreen() {
               multiline
             />
 
-            {/* Botones */}
             <View style={{ gap: 10, marginTop: 16 }}>
               <TouchableOpacity
                 style={[S.btnPrimary, creating && { opacity: 0.6 }]}
@@ -524,7 +484,6 @@ export default function AgendarCitaScreen() {
         <Modal visible animationType="slide" transparent onRequestClose={() => setDetailCita(null)}>
           <View style={S.modalOverlay}>
             <View style={S.modalCard}>
-              {/* Header */}
               <View style={styles.modalHeader}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                   <View style={styles.tipoIcon}>
@@ -546,7 +505,7 @@ export default function AgendarCitaScreen() {
                 <DetailRow label="TIPO" value={TIPO_MAP[(detailCita.tipo_consulta || '').toLowerCase()]?.label ?? detailCita.tipo_consulta ?? '—'} />
                 <DetailRow label="FECHA Y HORA" value={formatDateTime(detailCita.fecha_inicio)} />
                 <DetailRow label="DURACIÓN" value={`${detailCita.duracion_min} min`} />
-                <DetailRow label="VETERINARIO" value={detailCita.veterinario_nombre || '—'} />
+                <DetailRow label="MÉDICO" value={detailCita.veterinario_nombre || 'Por asignar (la clínica lo confirmará)'} />
                 {detailCita.motivo && <DetailRow label="MOTIVO" value={detailCita.motivo} />}
                 <View style={{ height: 8 }} />
               </ScrollView>
@@ -573,84 +532,44 @@ function DetailRow({ label, value }: { label: string; value: string }) {
 
 const styles = StyleSheet.create({
   header: {
-    paddingTop: 56,
-    paddingBottom: 20,
-    paddingHorizontal: 20,
-    gap: 6,
-    backgroundColor: C.bgCard,
-    borderBottomWidth: 1,
-    borderBottomColor: C.border,
+    paddingTop: 56, paddingBottom: 20, paddingHorizontal: 20, gap: 6,
+    backgroundColor: C.bgCard, borderBottomWidth: 1, borderBottomColor: C.border,
   },
   modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    paddingTop: 56,
-    backgroundColor: C.bgCard,
-    borderBottomWidth: 1,
-    borderBottomColor: C.border,
-    marginBottom: 4,
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    padding: 20, paddingTop: 56, backgroundColor: C.bgCard,
+    borderBottomWidth: 1, borderBottomColor: C.border, marginBottom: 4,
   },
   closeBtn: {
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: C.white05,
+    width: 36, height: 36, borderRadius: 18, backgroundColor: C.white05,
     justifyContent: 'center', alignItems: 'center',
+  },
+  infoNote: {
+    backgroundColor: 'rgba(59,130,246,0.08)',
+    borderRadius: 10, padding: 12, marginBottom: 20,
+    borderLeftWidth: 3, borderLeftColor: C.info,
   },
   citaCard: {
-    backgroundColor: C.bgCard,
-    borderRadius: 14,
-    padding: 14,
-    flexDirection: 'row',
-    gap: 14,
-    alignItems: 'flex-start',
-    borderWidth: 1,
-    borderColor: C.border,
+    backgroundColor: C.bgCard, borderRadius: 14, padding: 14,
+    flexDirection: 'row', gap: 14, alignItems: 'flex-start',
+    borderWidth: 1, borderColor: C.border,
   },
   tipoIcon: {
-    width: 48, height: 48, borderRadius: 24,
-    backgroundColor: C.bgElevated,
-    borderWidth: 1, borderColor: C.border,
-    justifyContent: 'center', alignItems: 'center',
+    width: 48, height: 48, borderRadius: 24, backgroundColor: C.bgElevated,
+    borderWidth: 1, borderColor: C.border, justifyContent: 'center', alignItems: 'center',
   },
   selectorOption: {
-    backgroundColor: C.bgElevated,
-    borderRadius: 12,
-    padding: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    borderWidth: 1,
-    borderColor: C.border,
+    backgroundColor: C.bgElevated, borderRadius: 12, padding: 14,
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    borderWidth: 1, borderColor: C.border,
   },
-  selectorSelected: {
-    borderColor: C.accent,
-    backgroundColor: C.accentBg,
-  },
-  datePicker: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    padding: 14,
-  },
+  selectorSelected: { borderColor: C.accent, backgroundColor: C.accentBg },
+  datePicker: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14 },
   slotBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 10,
-    backgroundColor: C.bgElevated,
-    borderWidth: 1,
-    borderColor: C.border,
+    paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10,
+    backgroundColor: C.bgElevated, borderWidth: 1, borderColor: C.border,
   },
-  slotBtnSelected: {
-    backgroundColor: C.accentBg,
-    borderColor: C.accent,
-  },
-  slotText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: C.subtext,
-  },
-  slotTextSelected: {
-    color: C.accent,
-  },
+  slotBtnSelected: { backgroundColor: C.accentBg, borderColor: C.accent },
+  slotText: { fontSize: 14, fontWeight: '600', color: C.subtext },
+  slotTextSelected: { color: C.accent },
 });
