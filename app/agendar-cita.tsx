@@ -173,7 +173,7 @@ export default function AgendarCitaScreen() {
     setSlotSelected(null);
     try {
       const res = await api.get(
-        `/citas/slots?date=${encodeURIComponent(fechaStr)}&tipo=${encodeURIComponent(tipoConsulta)}`
+        `/citas/slots?date=${encodeURIComponent(fechaStr)}&tipo=${encodeURIComponent(tipoConsulta)}&modo=mobile`
       );
       if (mountedRef.current) {
         setSlotsByVet(
