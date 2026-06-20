@@ -20,6 +20,7 @@ type Mascota = {
   especie?: string;
   raza?: string;
   edad?: number | null;
+  fecha_nacimiento?: string | null;
   historial_medico?: string | null;
   created_at?: string | null;
   [k: string]: any;
@@ -27,6 +28,35 @@ type Mascota = {
 
 const getSpeciesIcon = (especie?: string) =>
   SPECIES_ICONS[(especie || '').toLowerCase()] ?? '🐾';
+
+function calcEdad(fechaNacimiento?: string | null): string | null {
+  if (!fechaNacimiento) return null;
+  const ymd = fechaNacimiento.slice(0, 10);
+  const nac = new Date(ymd + 'T00:00:00');
+  if (isNaN(nac.getTime())) return null;
+  const hoy = new Date();
+  if (nac > hoy) return null;
+  let years  = hoy.getFullYear() - nac.getFullYear();
+  let months = hoy.getMonth()    - nac.getMonth();
+  if (hoy.getDate() < nac.getDate()) months -= 1;
+  if (months < 0) { years -= 1; months += 12; }
+  if (years <= 0 && months <= 0) {
+    const dias = Math.max(0, Math.floor((hoy.getTime() - nac.getTime()) / 86400000));
+    if (dias === 0) return 'Recién nacido';
+    return `${dias} día${dias !== 1 ? 's' : ''}`;
+  }
+  if (years === 0)  return `${months} ${months === 1 ? 'mes' : 'meses'}`;
+  if (months === 0) return `${years} año${years !== 1 ? 's' : ''}`;
+  return `${years} año${years !== 1 ? 's' : ''} y ${months} ${months === 1 ? 'mes' : 'meses'}`;
+}
+
+function formatFechaNacimiento(fecha?: string | null): string {
+  if (!fecha) return '—';
+  const ymd = fecha.slice(0, 10);
+  const d = new Date(ymd + 'T00:00:00');
+  if (isNaN(d.getTime())) return ymd;
+  return d.toLocaleDateString('es-CR', { year: 'numeric', month: 'long', day: 'numeric' });
+}
 
 // ─── Subcomponentes ───────────────────────────────────────────────────────────
 
@@ -41,9 +71,8 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 
 function PetCard({ mascota, onPress }: { mascota: Mascota; onPress: () => void }) {
   const especieRaza = [mascota.especie, mascota.raza].filter(Boolean).join(' · ');
-  const edad = mascota.edad != null
-    ? `${mascota.edad} año${mascota.edad !== 1 ? 's' : ''}`
-    : null;
+  const edadStr = calcEdad(mascota.fecha_nacimiento)
+    ?? (mascota.edad != null ? `${mascota.edad} año${mascota.edad !== 1 ? 's' : ''}` : null);
 
   return (
     <TouchableOpacity style={styles.petCard} onPress={onPress} activeOpacity={0.75}>
@@ -53,7 +82,7 @@ function PetCard({ mascota, onPress }: { mascota: Mascota; onPress: () => void }
       <View style={{ flex: 1, gap: 3 }}>
         <Text style={S.h3}>{mascota.nombre || '—'}</Text>
         {especieRaza ? <Text style={S.small}>{especieRaza}</Text> : null}
-        {edad ? <Text style={S.small}>⏱ {edad}</Text> : null}
+        {edadStr ? <Text style={S.small}>⏱ {edadStr}</Text> : null}
       </View>
       <Text style={{ color: C.muted, fontSize: 22 }}>›</Text>
     </TouchableOpacity>
@@ -69,9 +98,9 @@ function PetDetailModal({
 }) {
   if (!mascota) return null;
   const especieRaza = [mascota.especie, mascota.raza].filter(Boolean).join(' · ');
-  const edad = mascota.edad != null
-    ? `${mascota.edad} año${mascota.edad !== 1 ? 's' : ''}`
-    : '—';
+  const edadStr = calcEdad(mascota.fecha_nacimiento)
+    ?? (mascota.edad != null ? `${mascota.edad} año${mascota.edad !== 1 ? 's' : ''}` : '—');
+  const fechaNacStr = formatFechaNacimiento(mascota.fecha_nacimiento);
   const createdAt = mascota.created_at
     ? new Date(mascota.created_at).toLocaleDateString('es-CR', {
         year: 'numeric', month: 'long', day: 'numeric',
@@ -98,14 +127,21 @@ function PetDetailModal({
           </View>
 
           <ScrollView showsVerticalScrollIndicator={false}>
-            <InfoRow label="EDAD" value={edad} />
+            {mascota.fecha_nacimiento ? (
+              <>
+                <InfoRow label="FECHA DE NACIMIENTO" value={fechaNacStr} />
+                <InfoRow label="EDAD" value={edadStr} />
+              </>
+            ) : (
+              <InfoRow label="EDAD" value={edadStr} />
+            )}
             {mascota.especie && <InfoRow label="ESPECIE" value={mascota.especie} />}
             {mascota.raza    && <InfoRow label="RAZA"    value={mascota.raza}    />}
             {createdAt       && <InfoRow label="REGISTRADA EL" value={createdAt}  />}
 
             {mascota.historial_medico ? (
               <View style={{ marginTop: 4 }}>
-                <Text style={[S.label, { marginBottom: 8 }]}>HISTORIAL</Text>
+                <Text style={[S.label, { marginBottom: 8 }]}>OBSERVACIONES</Text>
                 <View style={S.cardElevated}>
                   <Text style={S.body}>{mascota.historial_medico}</Text>
                 </View>

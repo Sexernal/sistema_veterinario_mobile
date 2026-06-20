@@ -22,6 +22,7 @@ type Propietario = {
   email?: string;
   telefono?: string;
   direccion?: string;
+  cedula?: string | null;
   [k: string]: any;
 };
 
@@ -59,7 +60,7 @@ function Field({
     <View style={{ marginBottom: 14 }}>
       <Text style={[S.label, { marginBottom: 6 }]}>{label}</Text>
       <TextInput
-        style={[S.input, { marginBottom: 0 }, !editable && { opacity: 0.5 }]}
+        style={[S.input, { marginBottom: 0 }, !editable && styles.inputDisabled]}
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
@@ -73,6 +74,20 @@ function Field({
   );
 }
 
+function ReadOnlyField({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={{ marginBottom: 14 }}>
+      <Text style={[S.label, { marginBottom: 6 }]}>{label}</Text>
+      <View style={[S.input, styles.readOnlyField, { marginBottom: 0 }]}>
+        <Text style={[S.body, { color: C.subtext }]}>{value}</Text>
+      </View>
+      <Text style={[S.small, { marginTop: 4, color: C.muted }]}>
+        La cédula no se puede modificar.
+      </Text>
+    </View>
+  );
+}
+
 // ─── Pantalla ─────────────────────────────────────────────────────────────────
 
 export default function ProfileScreen() {
@@ -80,9 +95,9 @@ export default function ProfileScreen() {
   const [saving, setSaving]   = useState(false);
   const [user, setUser]       = useState<Propietario | null>(null);
 
-  const [nombre, setNombre]   = useState('');
-  const [email, setEmail]     = useState('');
-  const [telefono, setTelefono] = useState('');
+  const [nombre, setNombre]       = useState('');
+  const [email, setEmail]         = useState('');
+  const [telefono, setTelefono]   = useState('');
   const [direccion, setDireccion] = useState('');
 
   const [showPassSection, setShowPassSection] = useState(false);
@@ -145,9 +160,8 @@ export default function ProfileScreen() {
     if (!direccion.trim() || direccion.trim().length < 5)
       errs.push('Dirección requerida (mínimo 5 caracteres).');
     if (showPassSection && password) {
-      if (password.length < 8)    errs.push('Nueva contraseña: mínimo 8 caracteres.');
       if (password !== confirmPassword) errs.push('Las contraseñas no coinciden.');
-      if (!currentPassword)       errs.push('Ingresa tu contraseña actual para cambiarla.');
+      if (!currentPassword)            errs.push('Ingresa tu contraseña actual para cambiarla.');
     }
     return errs;
   };
@@ -179,7 +193,6 @@ export default function ProfileScreen() {
         await AsyncStorage.setItem('propietarioData', JSON.stringify(updated));
         fillForm(updated);
       }
-      // Limpiar campos de contraseña tras guardar
       setCurrentPassword('');
       setPassword('');
       setConfirmPassword('');
@@ -225,11 +238,19 @@ export default function ProfileScreen() {
           <Text style={{ fontSize: 40 }}>👤</Text>
           <Text style={[S.h2, { marginTop: 10 }]}>{user?.nombre || '—'}</Text>
           <Text style={S.small}>{user?.email || ''}</Text>
+          {user?.cedula ? (
+            <View style={styles.cedulaBadge}>
+              <Text style={styles.cedulaText}>🪪 {user.cedula}</Text>
+            </View>
+          ) : null}
         </View>
 
         {/* Información personal */}
         <SectionHeader title="Información personal" />
         <View style={S.card}>
+          {user?.cedula ? (
+            <ReadOnlyField label="NÚMERO DE CÉDULA" value={user.cedula} />
+          ) : null}
           <Field
             label="NOMBRE COMPLETO"
             value={nombre}
@@ -291,7 +312,7 @@ export default function ProfileScreen() {
               label="NUEVA CONTRASEÑA"
               value={password}
               onChangeText={setPassword}
-              placeholder="Mínimo 8 caracteres"
+              placeholder="Nueva contraseña"
               secureTextEntry
             />
             <Field
@@ -339,6 +360,22 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: C.border,
   },
+  cedulaBadge: {
+    marginTop: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: C.accentBg,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  cedulaText: {
+    fontFamily: 'monospace',
+    fontSize: 14,
+    fontWeight: '700',
+    color: C.accent,
+    letterSpacing: 1,
+  },
   sectionHeader: {
     marginBottom: 10,
     marginTop: 20,
@@ -355,5 +392,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+  },
+  inputDisabled: {
+    opacity: 0.5,
+  },
+  readOnlyField: {
+    justifyContent: 'center',
+    opacity: 0.65,
   },
 });

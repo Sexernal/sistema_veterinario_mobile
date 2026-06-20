@@ -64,8 +64,8 @@ export default function LoginScreen() {
           <View style={styles.logoCircle}>
             <Text style={styles.logoEmoji}>🐾</Text>
           </View>
-          <Text style={styles.brandName}>VetCare</Text>
-          <Text style={styles.brandSub}>Sistema veterinario</Text>
+          <Text style={styles.brandName}>Veterinaria Cañas</Text>
+          <Text style={styles.brandSub}>Agradecemos tu confianza</Text>
         </View>
 
         {/* ── Formulario ── */}

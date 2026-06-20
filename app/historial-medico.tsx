@@ -23,6 +23,7 @@ type RecordItem = {
   fecha?: string;
   fecha_display?: string;
   peso?: number | null;
+  temperatura?: number | null;
   nota?: string | null;
   filepath?: string | null;
   creado_por_nombre?: string | null;
@@ -68,6 +69,9 @@ function RecordCard({ record, onPress }: { record: RecordItem; onPress: () => vo
         <Text style={S.small}>📅 {formatDate(record)}</Text>
         {record.peso != null && (
           <Text style={S.small}>⚖️ {Number(record.peso).toFixed(2)} kg</Text>
+        )}
+        {record.temperatura != null && (
+          <Text style={S.small}>🌡️ {Number(record.temperatura).toFixed(1)} °C</Text>
         )}
         {record.nota ? (
           <Text numberOfLines={2} style={[S.small, { marginTop: 4, color: C.subtext }]}>
@@ -132,6 +136,12 @@ function RecordDetailModal({
               <Text style={S.label}>PESO</Text>
               <Text style={[S.body, { marginTop: 3 }]}>
                 {record.peso != null ? `${Number(record.peso).toFixed(2)} kg` : '—'}
+              </Text>
+            </View>
+            <View style={styles.detailRow}>
+              <Text style={S.label}>TEMPERATURA</Text>
+              <Text style={[S.body, { marginTop: 3 }]}>
+                {record.temperatura != null ? `${Number(record.temperatura).toFixed(1)} °C` : '—'}
               </Text>
             </View>
             <View style={styles.detailRow}>
