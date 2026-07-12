@@ -13,13 +13,14 @@ import {
   View,
 } from 'react-native';
 import { C, S, SPECIES_ICONS } from '../constants/theme';
-import api, { getCurrentPropietario, getMascotasByPropietario } from '../services/api';
+import api, { API_URL, getCurrentPropietario, getMascotasByPropietario } from '../services/api';
 
 type Mascota   = { id: number; nombre?: string; especie?: string; [k: string]: any };
 type RecordItem = {
   id: number;
   mascota_id: number;
   tipo?: string;
+  tipo_personalizado?: string | null;
   fecha?: string;
   fecha_display?: string;
   peso?: number | null;
@@ -54,7 +55,15 @@ const formatDate = (r: RecordItem) => {
   });
 };
 
-const API_BASE = 'http://186.176.139.89:3000'; // ← ajusta a tu IP/URL
+// Base para archivos adjuntos con ruta relativa: mismo servidor que el API,
+// derivado de API_URL para no duplicar la IP en dos lugares.
+const API_BASE = API_URL.replace(/\/api\/v1\/?$/, '');
+
+// Fichas de tipo "otro" guardan el nombre real en tipo_personalizado
+const displayTipo = (r: RecordItem) =>
+  (r.tipo || '').toLowerCase() === 'otro' && r.tipo_personalizado
+    ? r.tipo_personalizado
+    : (r.tipo || 'Registro');
 
 // ─── Subcomponentes ───────────────────────────────────────────────────────────
 
@@ -65,7 +74,7 @@ function RecordCard({ record, onPress }: { record: RecordItem; onPress: () => vo
         <Text style={{ fontSize: 22 }}>{getRecordIcon(record.tipo)}</Text>
       </View>
       <View style={{ flex: 1, gap: 3 }}>
-        <Text style={S.h3}>{record.tipo || 'Registro'}</Text>
+        <Text style={S.h3}>{displayTipo(record)}</Text>
         <Text style={S.small}>📅 {formatDate(record)}</Text>
         {record.peso != null && (
           <Text style={S.small}>⚖️ {Number(record.peso).toFixed(2)} kg</Text>
@@ -120,7 +129,7 @@ function RecordDetailModal({
               <View style={styles.recordIcon}>
                 <Text style={{ fontSize: 28 }}>{getRecordIcon(record.tipo)}</Text>
               </View>
-              <Text style={S.h2}>{record.tipo || 'Registro'}</Text>
+              <Text style={S.h2}>{displayTipo(record)}</Text>
             </View>
             <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
               <Text style={{ color: C.subtext, fontSize: 18 }}>✕</Text>
@@ -188,8 +197,9 @@ export default function HistorialMedicoScreen() {
 
   useEffect(() => { loadAll(); }, []);
 
-  const loadAll = async () => {
-    setLoading(true);
+  // silent=true refresca sin desmontar la pantalla (pull-to-refresh)
+  const loadAll = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const p = await getCurrentPropietario();
       if (!p?.id) {
@@ -215,15 +225,15 @@ export default function HistorialMedicoScreen() {
       for (const r of results) map[String(r.petId)] = r.data;
       setRecordsByPet(map);
     } catch {
-      Alert.alert('Error', 'No se pudo cargar el historial médico.');
+      if (!silent) Alert.alert('Error', 'No se pudo cargar el historial médico.');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadAll().finally(() => setRefreshing(false));
+    await loadAll(true).finally(() => setRefreshing(false));
   };
 
   const totalRecords = Object.values(recordsByPet).reduce((acc, r) => acc + r.length, 0);
@@ -254,6 +264,22 @@ export default function HistorialMedicoScreen() {
         }
         showsVerticalScrollIndicator={false}
       >
+        {/* Acceso al libro de vacunas */}
+        <TouchableOpacity
+          style={styles.vacunasBanner}
+          onPress={() => router.push('/libro-vacunas')}
+          activeOpacity={0.8}
+        >
+          <View style={styles.vacunasBannerIcon}>
+            <Text style={{ fontSize: 24 }}>💉</Text>
+          </View>
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text style={S.h3}>Libro de vacunas</Text>
+            <Text style={S.small}>Dosis aplicadas, ciclos y próximas vacunas</Text>
+          </View>
+          <Text style={{ color: C.muted, fontSize: 22 }}>›</Text>
+        </TouchableOpacity>
+
         {mascotas.length === 0 ? (
           <View style={[S.card, { alignItems: 'center', paddingVertical: 48 }]}>
             <Text style={{ fontSize: 44, marginBottom: 14 }}>🏥</Text>
@@ -316,6 +342,27 @@ const styles = StyleSheet.create({
     backgroundColor: C.bgCard,
     borderBottomWidth: 1,
     borderBottomColor: C.border,
+  },
+  vacunasBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    padding: 16,
+    borderRadius: 14,
+    marginBottom: 20,
+    backgroundColor: 'rgba(167,139,250,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(167,139,250,0.35)',
+  },
+  vacunasBannerIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(167,139,250,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(167,139,250,0.3)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   petHeader: {
     flexDirection: 'row',

@@ -42,6 +42,7 @@ yarn install
 
 3. **Configuracion de variable de entorno**
 Yo la manejo desde el api.ts y ya deberia estar conectada a el vercel
+-para configurarlo debes usar tu IP (para saberlo puedes usar "ipconfig" desde PowerShell)
 
 4. **Inicia la aplicacion**
 npx expo start

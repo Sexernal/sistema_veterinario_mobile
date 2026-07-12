@@ -1,8 +1,9 @@
-import { router } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import { router, useFocusEffect } from 'expo-router';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -16,6 +17,9 @@ import {
   getMascotasByPropietario,
   logoutPropietario,
 } from '../services/api';
+
+// Intervalo de refresco automático del dashboard (ms)
+const AUTO_REFRESH_MS = 60000;
 
 // ─── Componentes locales ───────────────────────────────────────────────────────
 
@@ -60,15 +64,16 @@ function QuickAction({ icon, label, subtitle, onPress }: {
 // ─── Pantalla principal ────────────────────────────────────────────────────────
 
 export default function HomeScreen() {
-  const [user, setUser]       = useState<any>(null);
+  const [user, setUser]         = useState<any>(null);
   const [mascotas, setMascotas] = useState<any[]>([]);
-  const [citas, setCitas]     = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [citas, setCitas]       = useState<any[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const hasLoaded = useRef(false);
 
-  useEffect(() => { loadData(); }, []);
-
-  const loadData = async () => {
-    setLoading(true);
+  // silent=true refresca los datos sin mostrar el spinner de pantalla completa
+  const loadData = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const userData = await getCurrentPropietario();
       setUser(userData);
@@ -80,11 +85,28 @@ export default function HomeScreen() {
         setMascotas(m || []);
         setCitas(c || []);
       }
+      hasLoaded.current = true;
     } catch {
-      Alert.alert('Error', 'No se pudieron cargar tus datos.');
+      if (!silent) Alert.alert('Error', 'No se pudieron cargar tus datos.');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
+  }, []);
+
+  // Se ejecuta cada vez que la pantalla gana foco (al entrar o al volver de otra
+  // pantalla) y programa un refresco silencioso periódico mientras esté visible.
+  useFocusEffect(
+    useCallback(() => {
+      loadData(hasLoaded.current);
+      const interval = setInterval(() => loadData(true), AUTO_REFRESH_MS);
+      return () => clearInterval(interval);
+    }, [loadData])
+  );
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadData(true);
+    setRefreshing(false);
   };
 
   const handleLogout = () => {
@@ -115,7 +137,13 @@ export default function HomeScreen() {
   const firstName = (user?.nombre || 'Usuario').split(' ')[0];
 
   return (
-    <ScrollView style={S.screen} showsVerticalScrollIndicator={false}>
+    <ScrollView
+      style={S.screen}
+      showsVerticalScrollIndicator={false}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.accent} />
+      }
+    >
 
       {/* ── Header ── */}
       <View style={styles.header}>

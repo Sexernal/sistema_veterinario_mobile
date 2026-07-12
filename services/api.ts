@@ -1,7 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 
-const API_URL = 'http://192.168.1.9:3001/api/v1';
+// ⚠️ Cambia esta IP por la IPv4 de TU PC en la red local (comando: ipconfig)
+export const API_URL = 'http://192.168.1.14:3001/api/v1';
 
 interface LoginCredentials {
   cedula: string;
@@ -84,7 +85,7 @@ export const getCurrentPropietario = async (): Promise<PropietarioData | null> =
 // 🐕 Obtener mascotas del propietario
 export const getMascotasByPropietario = async (propietarioId: number) => {
   try {
-    const response = await api.get(`/mascotas?owner_id=${propietarioId}`);
+    const response = await api.get(`/mascotas?owner_id=${propietarioId}&limit=100`);
     if (Array.isArray(response.data)) return response.data;
     if (Array.isArray(response.data.data)) return response.data.data;
     if (Array.isArray(response.data.mascotas)) return response.data.mascotas;
@@ -98,7 +99,7 @@ export const getMascotasByPropietario = async (propietarioId: number) => {
 // 📅 Obtener citas del propietario
 export const getCitasByPropietario = async (propietarioId: number) => {
   try {
-    const response = await api.get(`/citas?propietario_id=${propietarioId}`);
+    const response = await api.get(`/citas?propietario_id=${propietarioId}&limit=200`);
     if (Array.isArray(response.data)) return response.data;
     if (Array.isArray(response.data.data)) return response.data.data;
     if (Array.isArray(response.data.citas)) return response.data.citas;
@@ -106,6 +107,19 @@ export const getCitasByPropietario = async (propietarioId: number) => {
   } catch (error: any) {
     console.error('Error al obtener citas:', error.response?.data || error.message);
     throw error.response?.data || { message: 'Error al obtener citas' };
+  }
+};
+
+// 💉 Obtener vacunas de una mascota (libro de vacunas)
+export const getVacunasByMascota = async (mascotaId: number) => {
+  try {
+    const response = await api.get(`/vacunas?pet_id=${mascotaId}`);
+    if (Array.isArray(response.data)) return response.data;
+    if (Array.isArray(response.data.data)) return response.data.data;
+    return [];
+  } catch (error: any) {
+    console.error('Error al obtener vacunas:', error.response?.data || error.message);
+    throw error.response?.data || { message: 'Error al obtener vacunas' };
   }
 };
 
