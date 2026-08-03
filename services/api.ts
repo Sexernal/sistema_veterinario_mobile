@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 
 // ⚠️ Cambia esta IP por la IPv4 de TU PC en la red local (comando: ipconfig)
-export const API_URL = 'http://192.168.1.14:3001/api/v1';
+export const API_URL = 'http://172.26.201.12:3001/api/v1';
 
 interface LoginCredentials {
   cedula: string;

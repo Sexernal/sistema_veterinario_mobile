@@ -1,27 +1,30 @@
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Modal,
-    RefreshControl,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  Modal,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { C, S, SPECIES_ICONS } from '../constants/theme';
 import {
-    getCurrentPropietario,
-    getMascotasByPropietario,
-    getVacunasByMascota,
+  getCurrentPropietario,
+  getMascotasByPropietario,
+  getVacunasByMascota,
 } from '../services/api';
 
 type Mascota = { id: number; nombre?: string; especie?: string; [k: string]: any };
 type Vacuna = {
   id: number;
   mascota_id: number;
+  grupo_id?: number;
+  dosis_numero?: number;
+  total_dosis?: number;
   nombre_vacuna?: string;
   producto?: string | null;
   lote?: string | null;
@@ -35,6 +38,15 @@ type Vacuna = {
   veterinario_nombre?: string | null;
   notas?: string | null;
   [k: string]: any;
+};
+
+// Una serie de vacunación: todas las dosis que comparten grupo_id
+type Serie = {
+  grupoId: number;
+  nombre: string;
+  dosis: Vacuna[];   // de la más reciente a la más antigua
+  actual: Vacuna;
+  total: number;
 };
 
 // Estados calculados por el API (computeEstado en vacunasController)
@@ -71,6 +83,43 @@ function diasTexto(v: Vacuna): string | null {
   return null;
 }
 
+// Agrupa las dosis por serie de vacuna (grupo_id que asigna el API)
+function agruparPorSerie(vacunas: Vacuna[]): Serie[] {
+  const map = new Map<number, Vacuna[]>();
+  for (const v of vacunas) {
+    const g = v.grupo_id ?? v.id;
+    if (!map.has(g)) map.set(g, []);
+    map.get(g)!.push(v);
+  }
+
+  const series: Serie[] = [];
+  map.forEach((lista, grupoId) => {
+    const dosis = lista.slice().sort((a, b) => {
+      const fa = a.fecha_aplicacion || '';
+      const fb = b.fecha_aplicacion || '';
+      if (fa !== fb) return fa < fb ? 1 : -1;
+      return b.id - a.id;
+    });
+    series.push({
+      grupoId,
+      nombre: dosis[0].nombre_vacuna || 'Vacuna',
+      dosis,
+      actual: dosis[0],
+      total: dosis.length,
+    });
+  });
+
+  // Primero lo que requiere atención
+  const prioridad: Record<string, number> = { vencida: 0, proxima: 1, vigente: 2, sin_proxima: 3, completado: 4 };
+  series.sort((a, b) => {
+    const pa = prioridad[(a.actual.estado || '').toLowerCase()] ?? 9;
+    const pb = prioridad[(b.actual.estado || '').toLowerCase()] ?? 9;
+    if (pa !== pb) return pa - pb;
+    return (b.actual.fecha_aplicacion || '').localeCompare(a.actual.fecha_aplicacion || '');
+  });
+  return series;
+}
+
 // ─── Subcomponentes ───────────────────────────────────────────────────────────
 
 function EstadoBadge({ estado }: { estado?: string }) {
@@ -87,47 +136,103 @@ function EstadoBadge({ estado }: { estado?: string }) {
   );
 }
 
-function VacunaCard({ vacuna, onPress }: { vacuna: Vacuna; onPress: () => void }) {
-  const cfg = getEstadoCfg(vacuna.estado);
-  const infoDias = diasTexto(vacuna);
-  const completado = (vacuna.estado || '').toLowerCase() === 'completado';
+// Tarjeta de una serie de vacuna, con su historial de dosis desplegable
+function SerieCard({
+  serie,
+  expandida,
+  onToggle,
+  onVerDosis,
+}: {
+  serie: Serie;
+  expandida: boolean;
+  onToggle: () => void;
+  onVerDosis: (v: Vacuna) => void;
+}) {
+  const actual = serie.actual;
+  const cfg = getEstadoCfg(actual.estado);
+  const infoDias = diasTexto(actual);
+  const completado = (actual.estado || '').toLowerCase() === 'completado';
 
   return (
-    <TouchableOpacity
-      style={[styles.vacunaCard, { borderLeftWidth: 3, borderLeftColor: cfg.color }, completado && { opacity: 0.75 }]}
-      onPress={onPress}
-      activeOpacity={0.8}
-    >
-      <View style={styles.vacunaIcon}>
-        <Text style={{ fontSize: 22 }}>💉</Text>
-      </View>
-      <View style={{ flex: 1, gap: 3 }}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-          <Text style={[S.h3, { flex: 1 }]} numberOfLines={1}>{vacuna.nombre_vacuna || 'Vacuna'}</Text>
-          <EstadoBadge estado={vacuna.estado} />
+    <View style={[styles.serieCard, { borderLeftWidth: 3, borderLeftColor: cfg.color }, completado && { opacity: 0.8 }]}>
+      {/* Encabezado de la serie */}
+      <TouchableOpacity style={styles.serieHeader} onPress={onToggle} activeOpacity={0.75}>
+        <View style={styles.vacunaIcon}>
+          <Text style={{ fontSize: 22 }}>💉</Text>
         </View>
-        {vacuna.producto ? <Text style={S.small}>🧪 {vacuna.producto}</Text> : null}
-        <Text style={S.small}>📅 Aplicada: {vacuna.fecha_aplicacion_display || '—'}</Text>
-        {vacuna.fecha_proxima ? (
-          <Text style={S.small}>🔁 Próxima dosis: {vacuna.fecha_proxima_display || '—'}</Text>
-        ) : null}
-        {infoDias ? (
-          <Text style={[S.small, { marginTop: 2, fontWeight: '700', color: cfg.color }]}>{infoDias}</Text>
-        ) : null}
-        {vacuna.veterinario_nombre ? (
-          <Text style={[S.small, { marginTop: 2 }]}>👨‍⚕️ Dr. {vacuna.veterinario_nombre}</Text>
-        ) : null}
-      </View>
-      <Text style={{ color: C.muted, fontSize: 22 }}>›</Text>
-    </TouchableOpacity>
+        <View style={{ flex: 1, gap: 4 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <Text style={[S.h3, { flex: 1 }]} numberOfLines={1}>{serie.nombre}</Text>
+            <View style={styles.dosisChip}>
+              <Text style={styles.dosisChipText}>
+                {serie.total} {serie.total === 1 ? 'dosis' : 'dosis'}
+              </Text>
+            </View>
+          </View>
+          <View style={{ alignSelf: 'flex-start' }}>
+            <EstadoBadge estado={actual.estado} />
+          </View>
+          <Text style={S.small}>📅 Última: {actual.fecha_aplicacion_display || '—'}</Text>
+          {actual.fecha_proxima ? (
+            <Text style={S.small}>🔁 Próxima: {actual.fecha_proxima_display || '—'}</Text>
+          ) : null}
+          {infoDias ? (
+            <Text style={[S.small, { fontWeight: '700', color: cfg.color }]}>{infoDias}</Text>
+          ) : null}
+        </View>
+        <Text style={{ color: C.muted, fontSize: 16 }}>{expandida ? '▲' : '▼'}</Text>
+      </TouchableOpacity>
+
+      {/* Historial de dosis */}
+      {expandida && (
+        <View style={styles.historial}>
+          {serie.dosis.map((v, idx) => {
+            const numero = serie.total - idx;
+            const vCfg = getEstadoCfg(v.estado);
+            const esActual = idx === 0;
+            return (
+              <TouchableOpacity
+                key={v.id}
+                style={[styles.dosisRow, esActual && { backgroundColor: 'rgba(255,255,255,0.03)' }]}
+                onPress={() => onVerDosis(v)}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.dosisNum, { borderColor: vCfg.border, backgroundColor: vCfg.bg }]}>
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: vCfg.color }}>{numero}</Text>
+                </View>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <Text style={[S.body, { fontWeight: '700', fontSize: 13 }]}>
+                      {numero}ª dosis · {v.fecha_aplicacion_display || '—'}
+                    </Text>
+                    {esActual && serie.total > 1 && (
+                      <Text style={{ fontSize: 9.5, fontWeight: '800', color: C.accent }}>ACTUAL</Text>
+                    )}
+                  </View>
+                  <Text style={[S.small, { color: vCfg.color, fontWeight: '600' }]}>
+                    {getEstadoCfg(v.estado).icon} {getEstadoCfg(v.estado).label}
+                  </Text>
+                  {v.producto ? <Text style={S.small}>🧪 {v.producto}</Text> : null}
+                </View>
+                <Text style={{ color: C.muted, fontSize: 18 }}>›</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      )}
+    </View>
   );
 }
 
 function VacunaDetailModal({
   vacuna,
+  numero,
+  total,
   onClose,
 }: {
   vacuna: Vacuna | null;
+  numero?: number;
+  total?: number;
   onClose: () => void;
 }) {
   if (!vacuna) return null;
@@ -145,6 +250,9 @@ function VacunaDetailModal({
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={S.h2} numberOfLines={2}>{vacuna.nombre_vacuna || 'Vacuna'}</Text>
+                {numero && total ? (
+                  <Text style={[S.small, { marginTop: 2 }]}>Dosis {numero} de {total}</Text>
+                ) : null}
                 <View style={{ marginTop: 6, alignSelf: 'flex-start' }}>
                   <EstadoBadge estado={vacuna.estado} />
                 </View>
@@ -216,8 +324,9 @@ export default function LibroVacunasScreen() {
   const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [mascotas, setMascotas]     = useState<Mascota[]>([]);
-  const [vacunasByPet, setVacunasByPet] = useState<Record<string, Vacuna[]>>({});
-  const [selected, setSelected]     = useState<Vacuna | null>(null);
+  const [seriesByPet, setSeriesByPet] = useState<Record<string, Serie[]>>({});
+  const [expandidas, setExpandidas] = useState<Set<number>>(new Set());
+  const [selected, setSelected]     = useState<{ v: Vacuna; numero: number; total: number } | null>(null);
 
   useEffect(() => { loadAll(); }, []);
 
@@ -238,16 +347,16 @@ export default function LibroVacunasScreen() {
         (pets || []).map(async (pet: Mascota) => {
           try {
             const data = await getVacunasByMascota(pet.id);
-            return { petId: pet.id, data: data || [] };
+            return { petId: pet.id, series: agruparPorSerie(data || []) };
           } catch {
-            return { petId: pet.id, data: [] };
+            return { petId: pet.id, series: [] as Serie[] };
           }
         })
       );
 
-      const map: Record<string, Vacuna[]> = {};
-      for (const r of results) map[String(r.petId)] = r.data;
-      setVacunasByPet(map);
+      const map: Record<string, Serie[]> = {};
+      for (const r of results) map[String(r.petId)] = r.series;
+      setSeriesByPet(map);
     } catch {
       if (!silent) Alert.alert('Error', 'No se pudo cargar el libro de vacunas.');
     } finally {
@@ -260,7 +369,17 @@ export default function LibroVacunasScreen() {
     await loadAll(true).finally(() => setRefreshing(false));
   };
 
-  const totalVacunas = Object.values(vacunasByPet).reduce((acc, v) => acc + v.length, 0);
+  const toggleSerie = (grupoId: number) => {
+    setExpandidas(prev => {
+      const next = new Set(prev);
+      if (next.has(grupoId)) next.delete(grupoId); else next.add(grupoId);
+      return next;
+    });
+  };
+
+  const totalSeries = Object.values(seriesByPet).reduce((acc, s) => acc + s.length, 0);
+  const totalDosis  = Object.values(seriesByPet)
+    .reduce((acc, s) => acc + s.reduce((a, serie) => a + serie.total, 0), 0);
 
   if (loading) {
     return (
@@ -278,7 +397,9 @@ export default function LibroVacunasScreen() {
           <Text style={{ color: C.accent, fontSize: 16, fontWeight: '600' }}>‹ Volver</Text>
         </TouchableOpacity>
         <Text style={S.h2}>💉 Libro de vacunas</Text>
-        <Text style={S.small}>{totalVacunas} registro{totalVacunas !== 1 ? 's' : ''} en total</Text>
+        <Text style={S.small}>
+          {totalSeries} vacuna{totalSeries !== 1 ? 's' : ''} · {totalDosis} dosis registrada{totalDosis !== 1 ? 's' : ''}
+        </Text>
       </View>
 
       <ScrollView
@@ -298,7 +419,7 @@ export default function LibroVacunasScreen() {
           </View>
         ) : (
           mascotas.map(pet => {
-            const vacunas = vacunasByPet[String(pet.id)] || [];
+            const series = seriesByPet[String(pet.id)] || [];
             return (
               <View key={pet.id} style={{ marginBottom: 24 }}>
                 {/* Encabezado de mascota */}
@@ -307,22 +428,27 @@ export default function LibroVacunasScreen() {
                   <View>
                     <Text style={S.h3}>{pet.nombre || `Mascota ${pet.id}`}</Text>
                     <Text style={S.small}>
-                      {vacunas.length} vacuna{vacunas.length !== 1 ? 's' : ''} registrada{vacunas.length !== 1 ? 's' : ''}
+                      {series.length} vacuna{series.length !== 1 ? 's' : ''} registrada{series.length !== 1 ? 's' : ''}
                     </Text>
                   </View>
                 </View>
 
-                {vacunas.length === 0 ? (
+                {series.length === 0 ? (
                   <View style={[S.cardElevated, { alignItems: 'center', paddingVertical: 20 }]}>
                     <Text style={S.small}>Sin vacunas registradas.</Text>
                   </View>
                 ) : (
                   <View style={{ gap: 10 }}>
-                    {vacunas.map(v => (
-                      <VacunaCard
-                        key={v.id}
-                        vacuna={v}
-                        onPress={() => setSelected(v)}
+                    {series.map(serie => (
+                      <SerieCard
+                        key={serie.grupoId}
+                        serie={serie}
+                        expandida={expandidas.has(serie.grupoId)}
+                        onToggle={() => toggleSerie(serie.grupoId)}
+                        onVerDosis={(v) => {
+                          const idx = serie.dosis.findIndex(d => d.id === v.id);
+                          setSelected({ v, numero: serie.total - idx, total: serie.total });
+                        }}
                       />
                     ))}
                   </View>
@@ -333,7 +459,12 @@ export default function LibroVacunasScreen() {
         )}
       </ScrollView>
 
-      <VacunaDetailModal vacuna={selected} onClose={() => setSelected(null)} />
+      <VacunaDetailModal
+        vacuna={selected?.v ?? null}
+        numero={selected?.numero}
+        total={selected?.total}
+        onClose={() => setSelected(null)}
+      />
     </View>
   );
 }
@@ -355,15 +486,53 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     paddingLeft: 4,
   },
-  vacunaCard: {
+  serieCard: {
     backgroundColor: C.bgCard,
     borderRadius: 14,
-    padding: 14,
+    borderWidth: 1,
+    borderColor: C.border,
+    overflow: 'hidden',
+  },
+  serieHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
+    padding: 14,
+  },
+  dosisChip: {
+    paddingHorizontal: 9,
+    paddingVertical: 2,
+    borderRadius: 999,
+    backgroundColor: 'rgba(96,165,250,0.12)',
     borderWidth: 1,
-    borderColor: C.border,
+    borderColor: 'rgba(96,165,250,0.3)',
+  },
+  dosisChipText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: C.accent,
+  },
+  historial: {
+    backgroundColor: 'rgba(0,0,0,0.18)',
+    borderTopWidth: 1,
+    borderTopColor: C.border,
+  },
+  dosisRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.05)',
+  },
+  dosisNum: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   vacunaIcon: {
     width: 48,
