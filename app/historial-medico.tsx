@@ -13,12 +13,19 @@ import {
   View,
 } from 'react-native';
 import { C, S, SPECIES_ICONS } from '../constants/theme';
-import api, { API_URL, getCurrentPropietario, getMascotasByPropietario } from '../services/api';
+import api, {
+  API_URL,
+  getCurrentPropietario,
+  getMascotasByPropietario,
+  getTratamientosByMascota,
+} from '../services/api';
 
 type Mascota   = { id: number; nombre?: string; especie?: string; [k: string]: any };
 type RecordItem = {
   id: number;
   mascota_id: number;
+  tratamiento_id?: number | null;
+  tratamiento_nombre?: string | null;
   tipo?: string;
   tipo_personalizado?: string | null;
   fecha?: string;
@@ -30,6 +37,26 @@ type RecordItem = {
   creado_por_nombre?: string | null;
   [k: string]: any;
 };
+
+// Un tratamiento agrupa las consultas de un mismo episodio clínico:
+// si al paciente le pidieron volver 3 días seguidos, esas 3 fichas van juntas.
+type Tratamiento = {
+  id: number;
+  mascota_id: number;
+  nombre: string;
+  motivo?: string | null;
+  estado?: string;
+  total_fichas?: number;
+  duracion_dias?: number | null;
+  primera_ficha_display?: string;
+  ultima_ficha_display?: string;
+  [k: string]: any;
+};
+
+// Una entrada del historial: o un tratamiento con sus fichas, o una consulta suelta
+type Entrada =
+  | { kind: 'tratamiento'; key: string; orden: string; tratamiento: Tratamiento; fichas: RecordItem[] }
+  | { kind: 'ficha';       key: string; orden: string; ficha: RecordItem };
 
 const RECORD_ICONS: Record<string, string> = {
   vacuna: '💉', vacunacion: '💉',
@@ -65,6 +92,61 @@ const displayTipo = (r: RecordItem) =>
     ? r.tipo_personalizado
     : (r.tipo || 'Registro');
 
+// Estados que calcula el API para un tratamiento
+const ESTADO_TRATAMIENTO: Record<string, { label: string; icon: string; color: string; bg: string; border: string }> = {
+  activo:     { label: 'En curso',   icon: '🔄', color: '#F59E0B', bg: 'rgba(245,158,11,0.12)',  border: 'rgba(245,158,11,0.35)'  },
+  finalizado: { label: 'Finalizado', icon: '✓',  color: '#10B981', bg: 'rgba(16,185,129,0.12)',  border: 'rgba(16,185,129,0.30)'  },
+};
+
+const getTratamientoCfg = (estado?: string) =>
+  ESTADO_TRATAMIENTO[(estado || '').toLowerCase()] ?? ESTADO_TRATAMIENTO.activo;
+
+// Rango de fechas que cubre el tratamiento, sin repetir la fecha si fue un solo día
+function rangoTexto(t: Tratamiento): string {
+  const desde = t.primera_ficha_display || '—';
+  const hasta = t.ultima_ficha_display  || '—';
+  return desde === hasta ? desde : `${desde} → ${hasta}`;
+}
+
+function duracionTexto(t: Tratamiento): string | null {
+  if (t.duracion_dias == null) return null;
+  if (t.duracion_dias === 0)   return 'mismo día';
+  return `${t.duracion_dias} día${t.duracion_dias !== 1 ? 's' : ''}`;
+}
+
+// Arma la línea de tiempo del historial: mezcla tratamientos y consultas
+// sueltas, ordenados por la actividad más reciente de cada uno.
+// Mismo enfoque que agruparPorSerie en el libro de vacunas.
+function agruparPorTratamiento(records: RecordItem[], tratamientos: Tratamiento[]): Entrada[] {
+  const porId = new Map<number, { tratamiento: Tratamiento; fichas: RecordItem[] }>();
+  for (const t of tratamientos) porId.set(Number(t.id), { tratamiento: t, fichas: [] });
+
+  const entradas: Entrada[] = [];
+
+  for (const r of records) {
+    const grupo = r.tratamiento_id != null ? porId.get(Number(r.tratamiento_id)) : undefined;
+    // Si la ficha apunta a un tratamiento que no vino en la respuesta,
+    // se muestra suelta antes que desaparecer del historial.
+    if (grupo) grupo.fichas.push(r);
+    else entradas.push({ kind: 'ficha', key: `f${r.id}`, orden: r.fecha || '', ficha: r });
+  }
+
+  porId.forEach(({ tratamiento, fichas }) => {
+    if (!fichas.length) return;
+    // Dentro del tratamiento, la 1ª consulta va arriba
+    fichas.sort((a, b) => String(a.fecha || '').localeCompare(String(b.fecha || '')));
+    entradas.push({
+      kind: 'tratamiento',
+      key: `t${tratamiento.id}`,
+      orden: fichas[fichas.length - 1].fecha || '',
+      tratamiento,
+      fichas,
+    });
+  });
+
+  return entradas.sort((a, b) => String(b.orden).localeCompare(String(a.orden)));
+}
+
 // ─── Subcomponentes ───────────────────────────────────────────────────────────
 
 function RecordCard({ record, onPress }: { record: RecordItem; onPress: () => void }) {
@@ -93,6 +175,94 @@ function RecordCard({ record, onPress }: { record: RecordItem; onPress: () => vo
       </View>
       <Text style={{ color: C.muted, fontSize: 22 }}>›</Text>
     </TouchableOpacity>
+  );
+}
+
+// Tarjeta de un tratamiento con sus consultas desplegables.
+// Es solo lectura: el propietario ve la agrupación, no la modifica.
+function TratamientoCard({
+  tratamiento,
+  fichas,
+  expandido,
+  onToggle,
+  onVerFicha,
+}: {
+  tratamiento: Tratamiento;
+  fichas: RecordItem[];
+  expandido: boolean;
+  onToggle: () => void;
+  onVerFicha: (r: RecordItem) => void;
+}) {
+  const cfg      = getTratamientoCfg(tratamiento.estado);
+  const duracion = duracionTexto(tratamiento);
+
+  return (
+    <View style={[styles.tratamientoCard, { borderLeftWidth: 3, borderLeftColor: cfg.color }]}>
+      <TouchableOpacity style={styles.tratamientoHeader} onPress={onToggle} activeOpacity={0.75}>
+        <View style={styles.tratamientoIcon}>
+          <Text style={{ fontSize: 22 }}>🩺</Text>
+        </View>
+        <View style={{ flex: 1, gap: 4 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <Text style={[S.h3, { flex: 1 }]} numberOfLines={2}>{tratamiento.nombre}</Text>
+            <View style={styles.fichasChip}>
+              <Text style={styles.fichasChipText}>
+                {fichas.length} ficha{fichas.length !== 1 ? 's' : ''}
+              </Text>
+            </View>
+          </View>
+          <View style={{ alignSelf: 'flex-start' }}>
+            <View style={{
+              flexDirection: 'row', alignItems: 'center', gap: 4,
+              paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999,
+              backgroundColor: cfg.bg, borderWidth: 1, borderColor: cfg.border,
+            }}>
+              <Text style={{ fontSize: 11 }}>{cfg.icon}</Text>
+              <Text style={{ fontSize: 11, fontWeight: '700', color: cfg.color }}>{cfg.label}</Text>
+            </View>
+          </View>
+          <Text style={S.small}>
+            📅 {rangoTexto(tratamiento)}{duracion ? ` · ${duracion}` : ''}
+          </Text>
+          {tratamiento.motivo ? (
+            <Text numberOfLines={2} style={[S.small, { color: C.subtext }]}>
+              {tratamiento.motivo}
+            </Text>
+          ) : null}
+        </View>
+        <Text style={{ color: C.muted, fontSize: 16 }}>{expandido ? '▲' : '▼'}</Text>
+      </TouchableOpacity>
+
+      {expandido && (
+        <View style={styles.consultas}>
+          {fichas.map((r, idx) => (
+            <TouchableOpacity
+              key={r.id}
+              style={styles.consultaRow}
+              onPress={() => onVerFicha(r)}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.consultaNum, { borderColor: cfg.border, backgroundColor: cfg.bg }]}>
+                <Text style={{ fontSize: 11, fontWeight: '800', color: cfg.color }}>{idx + 1}</Text>
+              </View>
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text style={[S.body, { fontWeight: '700', fontSize: 13 }]}>
+                  {displayTipo(r)}
+                </Text>
+                <Text style={S.small}>📅 {formatDate(r)}</Text>
+                {r.peso != null && (
+                  <Text style={S.small}>⚖️ {Number(r.peso).toFixed(2)} kg</Text>
+                )}
+                {r.nota ? (
+                  <Text numberOfLines={1} style={[S.small, { color: C.subtext }]}>{r.nota}</Text>
+                ) : null}
+              </View>
+              <Text style={{ color: C.muted, fontSize: 18 }}>›</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+    </View>
   );
 }
 
@@ -129,7 +299,14 @@ function RecordDetailModal({
               <View style={styles.recordIcon}>
                 <Text style={{ fontSize: 28 }}>{getRecordIcon(record.tipo)}</Text>
               </View>
-              <Text style={S.h2}>{displayTipo(record)}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={S.h2}>{displayTipo(record)}</Text>
+                {record.tratamiento_nombre ? (
+                  <Text style={[S.small, { marginTop: 2, color: C.accent }]} numberOfLines={2}>
+                    🩺 {record.tratamiento_nombre}
+                  </Text>
+                ) : null}
+              </View>
             </View>
             <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
               <Text style={{ color: C.subtext, fontSize: 18 }}>✕</Text>
@@ -193,7 +370,10 @@ export default function HistorialMedicoScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [mascotas, setMascotas]     = useState<Mascota[]>([]);
   const [recordsByPet, setRecordsByPet] = useState<Record<string, RecordItem[]>>({});
+  const [tratamientosByPet, setTratamientosByPet] = useState<Record<string, Tratamiento[]>>({});
   const [selectedRecord, setSelectedRecord] = useState<RecordItem | null>(null);
+  // Los tratamientos arrancan desplegados; aquí guardamos los que el usuario cerró
+  const [colapsados, setColapsados] = useState<Record<string, boolean>>({});
 
   useEffect(() => { loadAll(); }, []);
 
@@ -212,18 +392,26 @@ export default function HistorialMedicoScreen() {
 
       const results = await Promise.all(
         (pets || []).map(async (pet: Mascota) => {
-          try {
-            const res = await api.get(`/medical-records?pet_id=${pet.id}`);
-            return { petId: pet.id, data: res.data?.data || [] };
-          } catch {
-            return { petId: pet.id, data: [] };
-          }
+          // Las fichas son lo esencial; si los tratamientos fallan seguimos
+          // mostrando el historial plano en vez de dejar la pantalla vacía.
+          const [fichas, tratamientos] = await Promise.all([
+            api.get(`/medical-records?pet_id=${pet.id}`)
+              .then(res => res.data?.data || [])
+              .catch(() => []),
+            getTratamientosByMascota(pet.id).catch(() => []),
+          ]);
+          return { petId: pet.id, fichas, tratamientos };
         })
       );
 
-      const map: Record<string, RecordItem[]> = {};
-      for (const r of results) map[String(r.petId)] = r.data;
-      setRecordsByPet(map);
+      const mapFichas: Record<string, RecordItem[]>  = {};
+      const mapTrat:   Record<string, Tratamiento[]> = {};
+      for (const r of results) {
+        mapFichas[String(r.petId)] = r.fichas;
+        mapTrat[String(r.petId)]   = r.tratamientos;
+      }
+      setRecordsByPet(mapFichas);
+      setTratamientosByPet(mapTrat);
     } catch {
       if (!silent) Alert.alert('Error', 'No se pudo cargar el historial médico.');
     } finally {
@@ -290,7 +478,11 @@ export default function HistorialMedicoScreen() {
           </View>
         ) : (
           mascotas.map(pet => {
-            const records = recordsByPet[String(pet.id)] || [];
+            const records     = recordsByPet[String(pet.id)] || [];
+            const tratamientos = tratamientosByPet[String(pet.id)] || [];
+            const entradas    = agruparPorTratamiento(records, tratamientos);
+            const numGrupos   = entradas.filter(e => e.kind === 'tratamiento').length;
+
             return (
               <View key={pet.id} style={{ marginBottom: 24 }}>
                 {/* Encabezado de mascota */}
@@ -300,6 +492,9 @@ export default function HistorialMedicoScreen() {
                     <Text style={S.h3}>{pet.nombre || `Mascota ${pet.id}`}</Text>
                     <Text style={S.small}>
                       {records.length} ficha{records.length !== 1 ? 's' : ''}
+                      {numGrupos > 0
+                        ? ` · ${numGrupos} tratamiento${numGrupos !== 1 ? 's' : ''}`
+                        : ''}
                     </Text>
                   </View>
                 </View>
@@ -310,13 +505,26 @@ export default function HistorialMedicoScreen() {
                   </View>
                 ) : (
                   <View style={{ gap: 10 }}>
-                    {records.map(r => (
-                      <RecordCard
-                        key={r.id}
-                        record={r}
-                        onPress={() => setSelectedRecord(r)}
-                      />
-                    ))}
+                    {entradas.map(e =>
+                      e.kind === 'tratamiento' ? (
+                        <TratamientoCard
+                          key={e.key}
+                          tratamiento={e.tratamiento}
+                          fichas={e.fichas}
+                          expandido={!colapsados[e.key]}
+                          onToggle={() =>
+                            setColapsados(c => ({ ...c, [e.key]: !c[e.key] }))
+                          }
+                          onVerFicha={setSelectedRecord}
+                        />
+                      ) : (
+                        <RecordCard
+                          key={e.key}
+                          record={e.ficha}
+                          onPress={() => setSelectedRecord(e.ficha)}
+                        />
+                      )
+                    )}
                   </View>
                 )}
               </View>
@@ -388,6 +596,65 @@ const styles = StyleSheet.create({
     backgroundColor: C.bgElevated,
     borderWidth: 1,
     borderColor: C.border,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  tratamientoCard: {
+    backgroundColor: C.bgCard,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: C.border,
+    overflow: 'hidden',
+  },
+  tratamientoHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 14,
+    padding: 14,
+  },
+  tratamientoIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: C.bgElevated,
+    borderWidth: 1,
+    borderColor: C.border,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fichasChip: {
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: C.bgElevated,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  fichasChipText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: C.subtext,
+  },
+  consultas: {
+    borderTopWidth: 1,
+    borderTopColor: C.border,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    gap: 6,
+  },
+  consultaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 10,
+    borderRadius: 10,
+    backgroundColor: C.bgElevated,
+  },
+  consultaNum: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },

@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 
 // ⚠️ Cambia esta IP por la IPv4 de TU PC en la red local (comando: ipconfig)
-export const API_URL = 'http://172.26.201.12:3001/api/v1';
+export const API_URL = 'http://192.168.1.14:3001/api/v1';
 
 interface LoginCredentials {
   cedula: string;
@@ -120,6 +120,19 @@ export const getVacunasByMascota = async (mascotaId: number) => {
   } catch (error: any) {
     console.error('Error al obtener vacunas:', error.response?.data || error.message);
     throw error.response?.data || { message: 'Error al obtener vacunas' };
+  }
+};
+
+// 🩺 Obtener tratamientos de una mascota (agrupan varias fichas del mismo episodio)
+export const getTratamientosByMascota = async (mascotaId: number) => {
+  try {
+    const response = await api.get(`/tratamientos?pet_id=${mascotaId}`);
+    if (Array.isArray(response.data)) return response.data;
+    if (Array.isArray(response.data.data)) return response.data.data;
+    return [];
+  } catch (error: any) {
+    console.error('Error al obtener tratamientos:', error.response?.data || error.message);
+    throw error.response?.data || { message: 'Error al obtener tratamientos' };
   }
 };
 
