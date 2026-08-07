@@ -136,6 +136,35 @@ export const getTratamientosByMascota = async (mascotaId: number) => {
   }
 };
 
+// 🔑 Pedir restablecimiento: manda un código de 6 dígitos al correo registrado
+export const solicitarResetPassword = async (cedula: string) => {
+  try {
+    const response = await api.post('/propietarios/password-reset/solicitar', { cedula });
+    return response.data?.data || {};
+  } catch (error: any) {
+    console.error('Error al solicitar restablecimiento:', error.response?.data || error.message);
+    throw error.response?.data || { message: 'No se pudo enviar el correo' };
+  }
+};
+
+// 🔑 Confirmar con el código y fijar la contraseña nueva.
+// La cédula viaja junto al código: así 6 dígitos no sirven para otra cuenta.
+export const confirmarResetPassword = async (
+  cedula: string,
+  codigo: string,
+  password: string
+) => {
+  try {
+    const response = await api.post('/propietarios/password-reset/confirmar', {
+      cedula, codigo, password,
+    });
+    return response.data;
+  } catch (error: any) {
+    console.error('Error al confirmar restablecimiento:', error.response?.data || error.message);
+    throw error.response?.data || { message: 'No se pudo cambiar la contraseña' };
+  }
+};
+
 // 🚪 Cerrar sesión
 export const logoutPropietario = async (): Promise<void> => {
   await AsyncStorage.removeItem('propietarioToken');

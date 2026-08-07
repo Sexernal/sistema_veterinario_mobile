@@ -122,7 +122,7 @@ export default function LoginScreen() {
 
           <TouchableOpacity
             style={{ alignItems: 'center' }}
-            onPress={() => Alert.alert('Recuperar contraseña', 'Contacta a la veterinaria para restablecer tu contraseña.')}
+            onPress={() => router.push('/recuperar-password')}
           >
             <Text style={{ color: C.accent, fontSize: 13, fontWeight: '600' }}>
               ¿Olvidaste tu contraseña?
